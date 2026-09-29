@@ -17,6 +17,7 @@ const stateLabel = b => b.idle_pending ? 'Closing soon' : ({ busy: 'Running', at
 const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (_) { return ''; } }, set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); return true; } catch (_) { return false; } } };
 const draftKey = name => 'blades.draft.' + name;
 const assistantName = p => p.id === 'codex' ? 'Codex · ChatGPT' : p.id === 'gemini' ? 'Gemini' : p.id === 'claude' ? 'Claude' : p.label;
+const pageVersion = $('meta[name="ui-version"]')?.content;
 
 /* ---------- projects panel ---------- */
 function projBySlug(slug) { return S.projects.find(p => p.slug === slug); }
@@ -796,9 +797,10 @@ function syncSidebarAccess() {
 
 /* Drafts belong to a session and stay on this device, including when that session closes. */
 function saveDraft() {
-  if (!S.active) return;
+  if (!S.active) return true;
   const saved = storage.set(draftKey(S.active), $('#composeText').value);
   $('#draftHint').textContent = saved ? 'Draft saved on this device' : 'Draft storage unavailable · keep this page open';
+  return saved;
 }
 function renderComposer() {
   $('#composer').hidden = !S.active || S.settings || $('#side').classList.contains('show');
@@ -829,6 +831,9 @@ async function sendComposer(e) {
 async function loadStatus() {
   try {
     const status = await api('GET', '/api/status'); const badge = $('#accessBadge');
+    if (pageVersion && status.ui_version && status.ui_version !== pageVersion) {
+      $('#updateBtn').hidden = false; $('header').classList.add('has-update');
+    }
     const verified = status.lan_access === false && status.origin_protection === true;
     badge.textContent = verified ? (status.tailscale ? 'Local + Tailscale' : 'Local access') : 'Check access settings';
     badge.classList.toggle('verified', verified); badge.title = status.access || 'Access configuration';
@@ -850,6 +855,11 @@ function renderIdleHelp() {
 }
 
 /* ---------- wiring ---------- */
+$('#updateBtn')?.addEventListener('click', () => {
+  if ($('#composeSend').dataset.sending) return toast('Wait for your message to finish sending before reloading.');
+  if (!saveDraft()) return toast('Draft could not be saved. Copy your message before reloading.');
+  location.reload();
+});
 $('#setupNext').onclick = nextSetup;
 $('#setupBack').onclick = () => { if (!S.setupBusy) { S.setupStep = 0; renderSetup(); } };
 const closeSetup = () => { $('#setupModal').classList.remove('show'); S.setupPendingLaunch = null; };

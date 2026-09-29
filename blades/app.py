@@ -11,7 +11,7 @@ import termios
 import threading
 import time
 
-from flask import Flask, jsonify, request, send_from_directory, abort
+from flask import Flask, jsonify, request, abort
 from flask_sock import Sock
 from ptyprocess import PtyProcess
 
@@ -29,6 +29,19 @@ _handoff_receipts = {}
 
 
 # ---- helpers ---------------------------------------------------------------
+
+def _ui_assets():
+    """Version the served UI by content, including updates to an existing install."""
+    digest = hashlib.sha256()
+    index_html = ""
+    for filename in ("index.html", "app.js", "app.css"):
+        with open(os.path.join(STATIC, filename), "rb") as source:
+            content = source.read()
+        digest.update(filename.encode("ascii") + b"\0" + content + b"\0")
+        if filename == "index.html":
+            index_html = content.decode("utf-8")
+    return digest.hexdigest()[:16], index_html
+
 
 def _reconcile():
     """Keep ended panes long enough to archive; never overwrite a saved blade."""
@@ -208,6 +221,7 @@ def api_status():
     return {"access": "Local + Tailscale only", "lan_access": False,
             "origin_protection": True, "bind_addresses": config.bind_addresses(),
             "tailscale": bool(config.tailscale_ip()), "providers": providers.available(),
+            "ui_version": _ui_assets()[0],
             "idle_timeout_min": settings["idle_timeout_min"], "idle_grace_sec": settings["idle_grace_sec"]}
 
 
@@ -215,7 +229,8 @@ def api_status():
 
 @app.get("/")
 def index():
-    return send_from_directory(STATIC, "index.html")
+    version, html = _ui_assets()
+    return html.replace("__UI_VERSION__", version)
 
 
 @app.get("/healthz")

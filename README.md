@@ -37,6 +37,7 @@ Enable the assistants you intend to use. Each provider needs its own installatio
 - Tap a project's **+**, then choose **Claude**, **Codex · ChatGPT**, or **Gemini**. **New session** also includes a project picker.
 - Search and the **Live / Running / Needs you / Idle / Saved** filters keep the session list compact.
 - Reconnect after a network interruption, browser sleep, or device switch. Multiple viewers attach to the same process.
+- When a newer interface is available, **Update available · Reload** refreshes it explicitly. Your draft is saved first and running sessions stay open.
 - Use the mobile key bar for Esc, Tab, Ctrl+C, arrows, and Enter. Cmd/Ctrl+Enter sends the composer; Cmd/Ctrl+K searches projects.
 - The composer retains unsent drafts in that browser's local storage. Drafts do not sync between devices, and uncertain submissions are never automatically resent.
 - **Resume** opens the exact saved provider conversation. **Fresh** starts a new conversation with the project handoff. **View** shows saved output and the handoff.

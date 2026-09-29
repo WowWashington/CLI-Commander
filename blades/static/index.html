@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0f1115">
+<meta name="ui-version" content="__UI_VERSION__">
 <title>CLI Commander</title>
 <link rel="stylesheet" href="/static/vendor/xterm.min.css">
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/app.css?v=__UI_VERSION__">
 </head>
 <body>
 <div id="app">
@@ -15,6 +16,7 @@
     <button id="menuBtn" title="Projects">☰</button>
     <button class="brand" id="homeBtn" title="Home: overview of all open sessions">CLI <span>Commander</span><span class="brand-mark">/</span></button>
     <span id="accessBadge" class="access-badge" title="Checking access configuration">Checking access</span>
+    <button id="updateBtn" class="update-notice" hidden aria-label="Update available. Save draft and reload" title="A newer version is available. Reload saves your draft; sessions keep running."><span>Update available · </span>Reload</button>
 
     <div id="strip"></div>
     <div id="summary"></div>
@@ -245,6 +247,6 @@
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="/static/vendor/xterm.min.js"></script>
 <script src="/static/vendor/addon-fit.min.js"></script>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=__UI_VERSION__"></script>
 </body>
 </html>

@@ -40,6 +40,45 @@ class ApiTest(unittest.TestCase):
     def blade(self, provider='claude'):
         return self.store.create('blade-demo-1', 'demo', 'Demo', str(self.home), provider=provider)
 
+    def test_ui_version_matches_assets_and_changes_with_each_source(self):
+        static = self.home / 'static'
+        static.mkdir()
+        for filename in ('index.html', 'app.js', 'app.css'):
+            (static / filename).write_bytes((Path(self.mod.STATIC) / filename).read_bytes())
+        with patch.object(self.mod, 'STATIC', str(static)), \
+             patch.object(self.mod.app, '_static_folder', str(static)), \
+             patch('blades.config.bind_addresses', return_value=['127.0.0.1']), \
+             patch('blades.config.tailscale_ip', return_value=None), \
+             patch('blades.providers.available', return_value=[]):
+            def check_version():
+                status = self.client.get('/api/status')
+                self.assertEqual(status.status_code, 200)
+                version = status.json['ui_version']
+                self.assertRegex(version, r'^[0-9a-f]{16}$')
+                response = self.client.get('/')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers['Cache-Control'], 'no-store')
+                html = response.get_data(as_text=True)
+                self.assertIn(f'<meta name="ui-version" content="{version}">', html)
+                self.assertNotIn('__UI_VERSION__', html)
+                for filename in ('app.js', 'app.css'):
+                    url = f'/static/{filename}?v={version}'
+                    self.assertIn(url, html)
+                    with self.client.get(url) as asset:
+                        self.assertEqual(asset.status_code, 200)
+                        self.assertEqual(asset.data, (static / filename).read_bytes())
+                return version
+
+            previous = check_version()
+            self.assertEqual(previous, check_version())
+            for filename in ('app.js', 'app.css', 'index.html'):
+                with self.subTest(filename=filename):
+                    with (static / filename).open('a') as source:
+                        source.write('\n')
+                    current = check_version()
+                    self.assertNotEqual(previous, current)
+                    previous = current
+
     def test_terminal_queries_do_not_count_as_human_input(self):
         for reply in (b'\x1b[?1;2c', b'\x1b[>0;276;0c', b'\x1b[1;1R',
                       b'\x1b]11;rgb:0000/0000/0000\x1b\\', b'\x1bP1+r544e=787465726d\x1b\\'):

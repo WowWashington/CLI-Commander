@@ -227,6 +227,8 @@ header .brand { background: transparent; border: 0; padding: 0; font-size: 14px;
 .access-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: var(--dim); white-space: nowrap; }
 .access-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--busy); }
 .access-badge.verified::before { background: var(--accent); }
+/* Interface updates remain opt-in while terminal sessions keep running. */
+.update-notice { flex: none; min-height: 30px; border-color: var(--accent); color: var(--accent); white-space: nowrap; font-size: 10px; }
 #summary { gap: 10px; }
 #summary .attn b { color: var(--attn); }
 aside .tools { padding: 10px 8px; }
@@ -439,6 +441,9 @@ h1 { font-size: 24px; font-weight: 600; letter-spacing: -.7px; margin: 0; line-h
 @media (max-width: 600px) {
   #strip { display: none; }
   .access-badge { margin-left: auto; }
+  .has-update .access-badge { display: none; }
+  .update-notice { margin-left: auto; min-height: 36px; }
+  .update-notice span { display: none; }
   #home { padding: 16px 12px 24px; }
   .home-heading { gap: 8px; }
   .home-heading .primary { padding: 8px 10px; font-size: 11px; min-height: 38px; }

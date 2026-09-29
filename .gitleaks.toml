@@ -1,0 +1,17 @@
+title = "CLI Blades secret scanning"
+
+[extend]
+useDefault = true
+
+# Exact upstream xterm.js 5.5.0 export initializer, not a credential.
+# Keep the exception scoped to this rule, file and expression; all other
+# vendor content continues to be scanned.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Verified xterm.js export initializer"
+condition = "AND"
+regexTarget = "match"
+paths = ['''(^|/)blades/static/vendor/xterm\.min\.js$''']
+regexes = ['''t\.FourKeyMap=t\.TwoKeyMap=void''']

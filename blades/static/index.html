@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1115">
+<title>CLI Commander</title>
+<link rel="stylesheet" href="/static/vendor/xterm.min.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <button id="menuBtn" title="Projects">☰</button>
+    <button class="brand" id="homeBtn" title="Home: overview of all open sessions">CLI <span>Commander</span><span class="brand-mark">/</span></button>
+    <span id="accessBadge" class="access-badge" title="Checking access configuration">Checking access</span>
+
+    <div id="strip"></div>
+    <div id="summary"></div>
+    <button id="auditBtn" title="Project audit: unregistered folders, loose ends">Audit</button>
+    <button id="settingsBtn" title="Settings: broadcast, commands, prompt">⚙ Settings</button>
+  </header>
+
+  <div id="backdrop"></div>
+  <aside id="side">
+    <div class="tools">
+      <input id="filter" placeholder="filter projects…" autocomplete="off">
+      <button id="editBtn" title="Show hidden / reorder">Edit</button>
+      <button id="sideClose" title="Close">✕</button>
+    </div>
+    <div class="sect"><span>Projects · open CLIs nest below each</span></div>
+    <div id="projects"></div>
+    <div id="unregBox">
+      <div class="sect"><span>Unregistered folders</span><span id="unregCount"></span></div>
+      <div id="unreg"></div>
+    </div>
+    <div id="legacyBox">
+      <div class="sect"><span>Terminal sessions</span><span id="legacyCount"></span></div>
+      <div id="legacy"></div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="bladebar" class="home">
+      <span id="bladeInfo" class="grow">WORKSPACE / SESSIONS</span>
+      <span id="connection" class="connection" hidden></span>
+      <button id="keepBtn" title="Reset this session's inactivity timer">Keep open</button>
+      <button id="cfgBtn" title="Project prompt & notes">Prompt</button>
+      <button id="shellBtn" title="Open a plain shell blade for this project">Shell</button>
+      <button id="saveBtn" title="Send the save-state command">Save state</button>
+      <button id="closeBtn" class="danger" title="Wind down: save state, then exit">Wind down</button>
+      <button id="killBtn" title="Archive & force close">✕</button>
+    </div>
+    <div id="terms"><div id="home">
+      <div class="home-heading"><div><div class="eyebrow">YOUR PRIVATE WORKSPACE</div><h1>Session control</h1><p>Pick up where you left off.</p></div><button id="newSessionBtn" class="primary">+ New session</button></div>
+      <div id="fleet" aria-label="Session filters">
+        <button class="fleet-stat active" data-state="all"><span>Live sessions</span><strong id="countAll">0</strong></button>
+        <button class="fleet-stat" data-state="busy"><span><i class="status-dot busy"></i>Running</span><strong id="countBusy">0</strong></button>
+        <button class="fleet-stat" data-state="attention"><span><i class="status-dot attention"></i>Needs you</span><strong id="countAttention">0</strong></button>
+        <button class="fleet-stat" data-state="idle"><span><i class="status-dot idle"></i>Idle</span><strong id="countIdle">0</strong></button>
+        <button class="fleet-stat" data-state="saved"><span>Saved</span><strong id="countSaved">0</strong></button>
+      </div>
+      <div class="session-toolbar"><h2 id="sessionHeading">Live sessions</h2><input id="sessionSearch" type="search" aria-label="Search sessions" placeholder="Find a session…" autocomplete="off"></div>
+      <div id="homeGrid"></div><div id="homeEmpty"><strong>Ready when you are.</strong><span>Start a session in a project. It stays here when you disconnect.</span><button id="emptyAddProject" class="primary" hidden>+ Add your first project</button></div>
+      <section id="historySection"><div class="session-toolbar"><h2>Recently closed <span id="historyCount"></span></h2><span class="hint">Saved output · resume when available</span></div><div id="historyList"></div></section>
+      <details id="homeLegacy"><summary>Terminal windows <span id="homeLegacyCount"></span> <span class="hint">· outside CLI Commander · tap one to migrate</span></summary><div id="homeLegacyList"></div></details>
+      <div id="auditLine"></div>
+      <ul id="homeIndex"></ul>
+    </div>
+    <div id="settings" hidden>
+      <section class="set">
+        <h3>Assistants & setup</h3>
+        <p class="hint">Choose the assistants that appear in your project launcher. Their accounts stay on this Mac.</p>
+        <div id="setupSummary" class="setup-summary"></div>
+        <div class="row"><button id="setupReview" class="primary">Manage assistants</button><button id="setupRescan">Recheck sign-in</button><button id="setupReset">Reset setup</button></div>
+        <p class="hint">Reset clears assistant choices only. Sessions, archives, projects, and signed-in accounts are preserved.</p>
+      </section>
+      <section class="set">
+        <h3>Projects</h3>
+        <p class="hint">Add an existing folder on this Mac, then open your preferred assistant from its + button.</p>
+        <div class="row"><button id="settingsAddProject">+ Add project</button><span id="setupProjectCount" class="hint"></span></div>
+      </section>
+      <section class="set">
+        <h3>Session lifecycle</h3>
+        <p class="hint">Save a handoff and archive closed sessions in Recently closed.</p>
+        <div class="row"><label for="idleTimeout">Close after</label><input id="idleTimeout" type="number" min="0" max="168" step="0.5" value="24"><span class="hint">hours · 0 disables</span></div>
+        <p id="idleHelp" class="hint">24 hours after confirmed inactivity; busy sessions stay open. Protected sessions stay open too.</p>
+        <div class="row"><label for="idleGrace">Grace period</label><input id="idleGrace" type="number" min="30" max="3600" step="1"><span class="hint">seconds · at least 30</span><button id="idleSave" class="primary">Save</button></div>
+        <p id="runtimeInfo" class="hint"></p>
+      </section>
+      <section class="set">
+        <h3>Connection</h3>
+        <p class="hint">Local and Tailscale access only. Changing the port requires a service restart.</p>
+        <div class="row"><label for="setupPort">Port</label><input id="setupPort" type="number" min="1024" max="65535" step="1" value="5090"><button id="setupPortSave">Save port</button></div>
+        <p id="setupPortStatus" class="hint" role="status"></p>
+        <p class="hint">Save your work and close live sessions before changing ports. Your setup agent can restart the service.</p>
+        <details class="connection-help"><summary>Restart instructions</summary><pre id="setupPortInstructions" hidden></pre></details><a id="setupPortLink" target="_blank" rel="noopener noreferrer" hidden>Open after restart ↗</a>
+      </section>
+      <section class="set">
+        <h3>Broadcast</h3>
+        <p class="hint">Send one message to idle CLI Commander sessions or selected Terminal windows. Protected sessions are skipped. A wind-down message saves state, writes a handoff note, exits the assistant and closes the session.</p>
+        <div class="row"><label>Command</label>
+          <select id="bcCommand"><option value="">— free text —</option></select>
+        </div>
+        <textarea id="bcText" placeholder="Free text to send (ignored when a named command is chosen)"></textarea>
+        <div class="row">
+          <label class="chk"><input type="checkbox" id="bcBlades" checked> blades</label>
+          <label class="chk"><input type="checkbox" id="bcLegacy"> Terminal windows</label>
+          <label class="chk"><input type="checkbox" id="bcClose"> wind down after (exit + close)</label>
+        </div>
+        <div class="row">
+          <button id="bcSend" class="primary">Send to all</button>
+          <span id="bcTargets" class="hint"></span>
+        </div>
+        <pre id="bcResult" hidden></pre>
+      </section>
+      <section class="set">
+        <h3>Quick actions</h3>
+        <p class="hint">Run shell commands outside assistant sessions. Output is logged; tick <b>keep open</b> to run a command in a window under the <b>Shell Commands</b> project.</p>
+        <div id="quickList"></div>
+        <div class="row" style="justify-content:space-between">
+          <button id="quickAdd">+ New action</button>
+          <button id="quickSave" class="primary">Save actions</button>
+        </div>
+        <pre id="quickLog" hidden></pre>
+      </section>
+      <section class="set">
+        <h3>Commands</h3>
+        <p class="hint">Named messages available on the blade bar and in Broadcast. Automatic cleanup follows your inactivity settings.</p>
+        <div id="cmdList"></div>
+        <div class="row" style="justify-content:space-between">
+          <button id="cmdAdd">+ New command</button>
+          <button id="cmdSave" class="primary">Save commands</button>
+        </div>
+      </section>
+      <section class="set">
+        <h3>Global opening prompt</h3>
+        <p class="hint">Used for every new blade unless the project overrides it. Variables: {name} {path} {slug} {notes} {related} {handoff} {github}</p>
+        <textarea id="globalPrompt" style="min-height:160px"></textarea>
+        <div class="row"><button id="globalSave" class="primary">Save prompt</button></div>
+      </section>
+      <section class="set">
+        <h3>Protected windows</h3>
+        <p class="hint">Skipped by Broadcast and automatic cleanup. Toggle the padlock on a CLI row or Terminal session to change.</p>
+        <div id="protList" class="hint">none</div>
+      </section>
+    </div></div>
+    <form id="composer" hidden>
+      <div class="compose-row"><textarea id="composeText" aria-label="Message to active session" placeholder="Message this session…" rows="2" spellcheck="false"></textarea><button id="composeSend" type="submit" class="primary">Send ↵</button></div>
+      <div class="compose-meta"><span id="draftHint">Draft saved on this device</span><span>⌘ / Ctrl + Enter to send</span></div>
+    </form>
+    <div id="keybar" hidden>
+      <button data-key="Escape">esc</button>
+      <button data-key="Tab">tab</button>
+      <button data-key="C-c">^C</button>
+      <button data-key="Up">↑</button>
+      <button data-key="Down">↓</button>
+      <button data-key="Left">←</button>
+      <button data-key="Right">→</button>
+      <button data-key="Enter">⏎</button>
+      <button id="kbBtn">⌨</button>
+    </div>
+    <nav id="mnav">
+      <button data-view="sessions" class="active"><span class="ico">▦</span>Sessions<span id="mnavCount"></span></button>
+      <button data-view="projects"><span class="ico">☰</span>Projects</button>
+      <button data-view="terminal"><span class="ico">▮</span>Terminal</button>
+      <button data-view="settings"><span class="ico">⚙</span>Settings</button>
+    </nav>
+  </main>
+</div>
+
+<div class="modal" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle"><div class="box setup-box">
+  <div class="modal-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h3 id="setupTitle">Choose your assistants</h3></div><button id="setupClose" aria-label="Close setup">✕</button></div>
+  <div id="setupProgress" class="setup-progress"><span data-step="0">1 · Assistants</span><span data-step="1">2 · Sign-in</span><span data-step="2">3 · Ready</span></div>
+  <p id="setupIntro" class="hint"></p><div id="setupBody"></div>
+  <p id="setupError" class="setup-error" role="status" hidden></p>
+  <div class="setup-footer"><button id="setupBack">Back</button><span id="setupFootnote" class="hint"></span><button id="setupNext" class="primary">Continue →</button></div>
+</div></div>
+
+<div class="modal" id="projectModal" role="dialog" aria-modal="true" aria-labelledby="projectTitle"><div class="box project-box">
+  <div class="modal-heading"><div><div class="eyebrow">YOUR WORKSPACE</div><h3 id="projectTitle">Add a project</h3></div><button id="projectClose" aria-label="Close add project">✕</button></div>
+  <p class="hint">Choose an existing folder on the Mac running CLI Commander.</p>
+  <label for="projectPath">Folder path</label><input id="projectPath" placeholder="~/Projects/my-project" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <label for="projectName">Name <span class="hint">· optional</span></label><input id="projectName" placeholder="Use the folder name" autocomplete="off">
+  <p id="projectError" class="setup-error" role="status" hidden></p>
+  <div class="setup-footer"><span class="hint">Your existing files stay in place.</span><button id="projectSave" class="primary">Add project</button></div>
+</div></div>
+
+<div class="modal" id="newModal" role="dialog" aria-modal="true" aria-labelledby="newTitle"><div class="box launch-box">
+  <div class="modal-heading"><div><div id="newEyebrow" class="eyebrow">START SOMETHING</div><h3 id="newTitle">New session</h3></div><button id="newClose" aria-label="Close new session">✕</button></div>
+  <label id="newProjectLabel" for="newProject">Project</label><select id="newProject"></select>
+  <label id="newAssistantLabel">Assistant</label><div id="providerChoices"></div>
+  <p id="providerHelp" class="hint">Claude, Codex (ChatGPT), and Gemini run on this Mac.</p>
+  <button id="newAddProject" hidden>+ Add your first project</button>
+  <div class="launch-footer"><span class="hint">Start fresh · existing sessions stay open</span><button id="newLaunch" class="primary">Open session →</button></div>
+</div></div>
+
+<div class="modal" id="archiveModal" role="dialog" aria-modal="true" aria-labelledby="archiveTitle"><div class="box archive-box">
+  <div class="modal-heading"><div><div class="eyebrow">SAVED SESSION OUTPUT</div><h3 id="archiveTitle">Session archive</h3></div><button id="archiveClose" aria-label="Close archive">✕</button></div>
+  <p id="archiveMeta" class="hint"></p><pre id="archiveText" tabindex="0"></pre>
+</div></div>
+
+<div class="modal" id="cfgModal"><div class="box">
+  <h3 id="cfgTitle">Project prompt</h3>
+  <label>Notes about this project (injected into the opening prompt; also shown to related projects)</label>
+  <textarea id="cfgNotes"></textarea>
+  <label>Related projects (comma-separated slugs, e.g. web-app, shared-api)</label>
+  <input id="cfgRelated" style="width:100%">
+  <label>Prompt template override (blank = global default). Variables: {name} {path} {slug} {notes} {related} {handoff} {github}</label>
+  <textarea id="cfgPrompt"></textarea>
+  <label>Pending handoff note (consumed on next open)</label>
+  <pre id="cfgHandoff">none</pre>
+  <label>Preview of the opening prompt</label>
+  <pre id="cfgPreview"></pre>
+  <div class="row" style="justify-content:space-between">
+    <span><button id="cfgGlobal">Edit global default…</button> <button id="cfgClearHandoff">Clear handoff</button></span>
+    <span><button id="cfgSave" class="primary">Save</button> <button id="cfgClose">Close</button></span>
+  </div>
+</div></div>
+
+<div class="modal" id="migModal"><div class="box">
+  <h3 id="migTitle">Migrate Terminal session</h3>
+  <div id="migInfo" style="color:var(--dim);font-size:11px"></div>
+  <pre id="migScreen" style="max-height:160px"></pre>
+  <div class="row"><label style="margin:0">Open the new blade in project:</label><select id="migTarget"></select></div>
+  <div class="row">
+    <button id="migFresh" class="primary" title="Save state + handoff, close the tab, open a clean blade">Fresh blade (wind down first)</button>
+    <button id="migSave" title="Send the save-state command only">Save state only</button>
+  </div>
+  <label>Or resume the same conversation inside a blade (keeps context). Pick the transcript that matches this window:</label>
+  <div id="migCands"></div>
+  <div class="row" style="justify-content:flex-end"><button id="migClose">Close</button></div>
+</div></div>
+
+<div class="modal" id="auditModal"><div class="box">
+  <h3>Project audit <span id="auditWhen" style="color:var(--dim);font-weight:400;font-size:11px"></span></h3>
+  <div id="auditBody"></div>
+  <div class="row" style="justify-content:space-between">
+    <span style="color:var(--dim);font-size:11px">Nightly: apply inactivity policy at 22:30, then write ~/Projects/session-index/projects-audit-&lt;date&gt;.md</span>
+    <span><button id="auditWrite">Write report now</button> <button id="auditClose">Close</button></span>
+  </div>
+</div></div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/static/vendor/xterm.min.js"></script>
+<script src="/static/vendor/addon-fit.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

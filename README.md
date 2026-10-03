@@ -120,3 +120,7 @@ Secret scanners do not establish that commit history is free of personal informa
 - Tailscale: [access controls](https://tailscale.com/kb/1018/acls).
 
 Bundled terminal assets have their own licenses, listed in [third-party notices](blades/static/vendor/THIRD_PARTY_NOTICES.md). A license for CLI Commander's own code has not yet been selected; dependency licenses do not license this project's code.
+
+### Optional Ollama chat
+
+[Ollama setup and limits](docs/OLLAMA.md): explicitly choose an installed local model. Chat only, with a cloud-disabled loopback backend and retained terminal output; no automatic close or exact conversation resume. Source checkpoint only; deployment is separate.

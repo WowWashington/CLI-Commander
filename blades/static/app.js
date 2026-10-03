@@ -12,7 +12,7 @@ const GH_SVG = '<svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 
 
 const S = { restored: false, quick: [], settings: false, legacy: [], mig: null, projects: [], blades: [], recent: [], providers: [], provider: 'claude', sessionFilter: 'all', sessionSearch: '', commands: [], active: null, terms: {}, editing: false, layout: { order: [], hidden: [] }, filter: '', cfgSlug: null };
 const isMobile = () => matchMedia('(max-width: 1024px)').matches;
-const providerLabel = b => b.provider === 'shell' || b.shell ? 'Shell' : b.provider === 'codex' ? 'Codex' : b.provider === 'gemini' ? 'Gemini' : 'Claude';
+const providerLabel = b => b.provider === 'shell' || b.shell ? 'Shell' : b.provider === 'codex' ? 'Codex' : b.provider === 'gemini' ? 'Gemini' : b.provider === 'ollama' ? 'Ollama chat' : 'Claude';
 const stateLabel = b => b.idle_pending ? 'Closing soon' : ({ busy: 'Running', attention: 'Needs you', idle: 'Idle', closing: 'Saving', starting: 'Starting', unknown: 'Active · status unknown' }[b.state] || b.state);
 const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (_) { return ''; } }, set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); return true; } catch (_) { return false; } } };
 const draftKey = name => 'blades.draft.' + name;
@@ -160,7 +160,7 @@ async function launchAssistant(slug, provider) {
 
 /* Setup stores assistant choices only. Authentication remains in the native CLIs. */
 function enabledProviders() { const enabled = S.onboarding?.enabled_providers || []; return S.providers.filter(p => enabled.includes(p.id)); }
-const authLabel = p => !p.available ? 'Not installed' : p.auth?.state === 'ready' ? 'Signed in' : p.auth?.state === 'sign_in' ? 'Sign in needed' : 'Check sign-in';
+const authLabel = p => !p.available ? 'Not installed' : p.id === 'ollama' ? (p.auth?.state === 'ready' ? 'Model available · manual close' : p.auth?.detail || 'Choose a model') : p.auth?.state === 'ready' ? 'Signed in' : p.auth?.state === 'sign_in' ? 'Sign in needed' : 'Check sign-in';
 function officialLink(url, label) {
   try { const target = new URL(url); if (target.protocol !== 'https:') return null; const a = el('a', '', label); a.href = target.href; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; } catch (_) { return null; }
 }
@@ -179,7 +179,8 @@ async function openSetup() {
   S.setupStep = 0; S.setupShowAllGuides = false; $('#setupBody').textContent = 'Checking assistants on this Mac…'; $('#setupError').hidden = true; $('#setupNext').disabled = true;
   try {
     const data = await loadOnboarding();
-    S.setupSelected = new Set(data.completed ? data.enabled_providers : S.providers.filter(p => p.available).map(p => p.id));
+    S.setupSelected = new Set(data.completed ? data.enabled_providers : S.providers.filter(p => p.available && !p.opt_in).map(p => p.id));
+    S.setupOllamaModel = data.ollama_model || '';
     renderSetup(); $('#setupClose').focus();
   } catch (e) { $('#setupBody').textContent = ''; showSetupError('Could not load setup: ' + e.message); $('#setupNext').textContent = 'Try again'; $('#setupNext').disabled = false; S.setupFailed = true; }
 }
@@ -191,7 +192,7 @@ function renderSetup() {
   const selected = selectedAssistants(), pending = selected.filter(p => p.auth?.state !== 'ready');
   document.querySelectorAll('#setupProgress span').forEach(node => node.classList.toggle('current', Number(node.dataset.step) === step));
   $('#setupBack').hidden = step !== 1; $('#setupNext').disabled = !!S.setupBusy || (step === 0 && !selected.length);
-  $('#setupFootnote').textContent = step === 0 ? 'Installed assistants only' : step === 1 ? 'Sign in through the official CLI' : 'Change these choices in Settings';
+  $('#setupFootnote').textContent = step === 0 ? 'Installed assistants only' : step === 1 ? 'Check each provider’s setup requirements' : 'Change these choices in Settings';
   if (step === 0) {
     $('#setupTitle').textContent = 'Choose your assistants'; $('#setupIntro').textContent = 'We found these on your Mac. Pick the ones you want in each project’s + menu.';
     $('#setupNext').textContent = pending.length ? 'Continue →' : 'Finish setup';
@@ -201,6 +202,12 @@ function renderSetup() {
       check.onchange = () => { if (check.checked) S.setupSelected.add(p.id); else S.setupSelected.delete(p.id); renderSetup(); document.querySelector(`[data-setup-provider="${p.id}"]`)?.focus(); };
       const copy = el('span', 'setup-choice-copy'); copy.append(el('strong', '', assistantName(p)), el('small', 'auth-state ' + (p.auth?.state || 'unknown'), authLabel(p)));
       label.append(check, copy); row.append(label);
+      if (p.id === 'ollama') {
+        const modelLabel = el('label', 'hint', 'Exact installed model (including tag)');
+        const model = el('input'); model.value = S.setupOllamaModel || ''; model.placeholder = 'model:tag'; model.maxLength = 200;
+        model.autocomplete = 'off'; model.oninput = () => { S.setupOllamaModel = model.value.trim(); };
+        modelLabel.append(model, el('small', 'hint', 'Finish setup saves this model and checks it. Recheck uses the previously saved model.')); row.append(modelLabel);
+      }
       if (!p.available) { const link = officialLink(p.install_url, 'Install ↗'); if (link) row.append(link); }
       else row.append(el('span', 'setup-installed', 'Installed'));
       body.append(row);
@@ -212,11 +219,11 @@ function renderSetup() {
     }
     const links = el('div', 'setup-guide-actions');
     const rescan = el('button', 'setup-inline-button', 'Installed something? Check again'); rescan.onclick = recheckSetup;
-    const guides = el('button', 'setup-inline-button', 'Review sign-in guides'); guides.disabled = !selected.length; guides.onclick = () => { S.setupShowAllGuides = true; S.setupStep = 1; renderSetup(); };
+    const guides = el('button', 'setup-inline-button', 'Review setup guides'); guides.disabled = !selected.length; guides.onclick = () => { S.setupShowAllGuides = true; S.setupStep = 1; renderSetup(); };
     links.append(rescan, guides); body.append(links);
   } else if (step === 1) {
-    $('#setupTitle').textContent = S.setupShowAllGuides ? 'Sign-in guides' : pending.length ? 'Complete sign-in' : 'Your assistants are ready';
-    $('#setupIntro').textContent = S.setupShowAllGuides ? 'Signed-in assistants can keep their current accounts. Use these official commands in Terminal when you need to sign in.' : pending.length ? 'Use Terminal on this Mac. Follow the assistant’s official sign-in flow, then check again here.' : 'The selected assistants report that they are signed in.';
+    $('#setupTitle').textContent = S.setupShowAllGuides ? 'Setup guides' : pending.length ? 'Check provider readiness' : 'Saved setup checks passed';
+    $('#setupIntro').textContent = 'Follow each provider’s setup instructions on this Mac. Checks below use saved choices; Finish setup saves an edited Ollama model and checks that model.';
     $('#setupNext').textContent = 'Finish setup';
     for (const p of S.setupShowAllGuides ? selected : pending) {
       const card = el('section', 'auth-guide'); const head = el('div', 'auth-guide-head'); head.append(el('strong', '', assistantName(p)), el('span', 'auth-state ' + (p.auth?.state || 'unknown'), authLabel(p))); card.append(head);
@@ -224,23 +231,28 @@ function renderSetup() {
       if (p.auth_command) { const command = el('div', 'setup-command'); const code = el('code', '', p.auth_command); const copy = el('button', '', 'Copy'); copy.type = 'button'; copy.onclick = () => copySetupText(p.auth_command, copy); command.append(code, copy); card.append(command); }
       const steps = Array.isArray(p.auth_help) ? p.auth_help : p.auth_help ? [p.auth_help] : ['Run the command in Terminal and follow the assistant’s sign-in instructions.'];
       const list = el('ol'); steps.forEach(text => list.append(el('li', '', text))); card.append(list); body.append(card);
-      const guide = officialLink(p.auth_url, 'Official sign-in guide ↗'); if (guide) card.append(guide);
+      const guide = officialLink(p.auth_url, 'Official setup guide ↗'); if (guide) card.append(guide);
     }
-    if (!pending.length) body.append(el('div', 'setup-success', '✓ Signed in on this Mac'));
-    else body.append(el('p', 'setup-auth-note', 'You can finish setup now. Any assistant that still needs sign-in will prompt when opened. CLI Commander never asks for your password or API key.'));
-    const recheck = el('button', '', 'Check sign-in again'); recheck.onclick = recheckSetup; body.append(recheck);
+    if (!pending.length) body.append(el('div', 'setup-success', '✓ Saved provider setup checks passed'));
+    else body.append(el('p', 'setup-auth-note', 'You can save these choices now. Ollama cannot launch until its saved model and local-only backend pass readiness checks. Other providers may require their own sign-in. CLI Commander never asks for your password or API key.'));
+    const recheck = el('button', '', 'Recheck saved setup'); recheck.onclick = recheckSetup; body.append(recheck);
   } else {
-    $('#setupTitle').textContent = 'Your workspace is ready'; $('#setupIntro').textContent = 'Use a project’s + button to start the assistant you want. Your sessions stay on this Mac.';
+    $('#setupTitle').textContent = 'Setup saved'; $('#setupIntro').textContent = 'Your choices are saved. Review readiness below before opening a session from a project’s + button.';
     $('#setupNext').textContent = S.setupPendingLaunch ? 'Continue to session →' : 'Done';
-    const enabled = enabledProviders(); body.append(el('div', 'setup-success', '✓ ' + enabled.map(assistantName).join(' · ')));
+    const enabled = enabledProviders();
+    for (const p of enabled) {
+      body.append(el('p', p.auth?.state === 'ready' ? 'setup-success' : 'setup-auth-note', assistantName(p) + ': ' + authLabel(p)));
+      if (p.auth?.detail) body.append(el('p', 'hint', p.auth.detail));
+    }
+    const recheck = el('button', '', 'Recheck saved setup'); recheck.onclick = recheckSetup; body.append(recheck);
     if (!S.projects.some(p => p.exists !== false && !p.hidden)) { const add = el('button', 'primary', '+ Add your first project'); add.onclick = () => { $('#setupModal').classList.remove('show'); S.setupPendingLaunch = null; openProjectDialog(true); }; body.append(add); }
-    body.append(el('p', 'hint', 'Idle sessions close after your configured timeout. Archives and conversation resume stay available.'));
+    body.append(el('p', 'hint', 'Supported assistants close after confirmed inactivity. Ollama chat stays open until you end it; only retained terminal output can be archived, with no exact conversation resume.'));
   }
 }
 async function recheckSetup() {
   if (S.setupChecking || S.setupBusy) return;
   S.setupChecking = true; $('#setupBody').inert = true;
-  $('#setupFootnote').textContent = 'Checking sign-in…';
+  $('#setupFootnote').textContent = 'Checking saved provider setup…';
   const next = $('#setupNext'); next.disabled = true;
   try { await loadOnboarding(true); renderSetup(); toast('Assistant status updated'); }
   catch (e) { showSetupError('Could not check status: ' + e.message); $('#setupFootnote').textContent = 'Your choices are unchanged'; next.disabled = false; }
@@ -253,7 +265,7 @@ async function nextSetup() {
   const selected = selectedAssistants(); if (!selected.length) return;
   if (S.setupStep === 0 && selected.some(p => p.auth?.state !== 'ready')) { S.setupStep = 1; renderSetup(); return; }
   S.setupBusy = true; $('#setupBody').inert = true; $('#setupBack').disabled = true; $('#setupNext').disabled = true; $('#setupNext').textContent = 'Saving…';
-  try { await api('POST', '/api/onboarding', { enabled_providers: selected.map(p => p.id) }); await loadOnboarding(); S.setupStep = 2; }
+  try { await api('POST', '/api/onboarding', { enabled_providers: selected.map(p => p.id), ollama_model: S.setupOllamaModel || '' }); await loadOnboarding(); S.setupStep = 2; }
   catch (e) { showSetupError('Could not save setup: ' + e.message); }
   finally { S.setupBusy = false; $('#setupBody').inert = false; $('#setupBack').disabled = false; if (S.setupStep === 2) renderSetup(); else { $('#setupNext').disabled = false; $('#setupNext').textContent = 'Finish setup'; } }
 }
@@ -401,10 +413,10 @@ function renderBladebar() {
   info.textContent = `${b.project} / ${providerLabel(b)} · ${stateLabel(b)} · open ${age}${idleHint(b) ? ' · ' + idleHint(b) : ''}`;
   info.title = b.cwd;
   $('#keepBtn').hidden = b.protected || b.state === 'closing' || b.idle_remaining_sec == null;
-  $('#saveBtn').disabled = b.state !== 'idle' || b.protected || b.provider === 'shell';
-  $('#saveBtn').title = b.protected ? 'Unprotect this session before sending a save command' : b.provider === 'shell' ? 'Save-state prompts are available for assistant sessions' : b.state !== 'idle' ? 'Available when the assistant is idle' : 'Send the save-state command';
-  $('#closeBtn').disabled = b.state !== 'idle';
-  $('#closeBtn').title = b.state !== 'idle' ? 'Wait until this session is idle before winding down' : 'Save a handoff, archive, and close';
+  $('#saveBtn').disabled = b.state !== 'idle' || b.protected || ['shell', 'ollama'].includes(b.provider);
+  $('#saveBtn').title = b.protected ? 'Unprotect this session before sending a save command' : ['shell', 'ollama'].includes(b.provider) ? 'This provider has no automatic save-state command' : b.state !== 'idle' ? 'Available when the assistant is idle' : 'Send the save-state command';
+  $('#closeBtn').disabled = b.state !== 'idle' || b.provider === 'ollama';
+  $('#closeBtn').title = b.provider === 'ollama' ? 'Ollama has no completion proof; end chat yourself or explicitly close with a terminal snapshot' : b.state !== 'idle' ? 'Wait until this session is idle before winding down' : 'Save a handoff, archive, and close';
 }
 const fmtAge = (s = 0) => s < 60 ? `${Math.max(0, Math.floor(s))}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`;
 function idleHint(b) { return b.protected ? 'Protected' : b.idle_pending ? 'Saving soon · Keep open to cancel' : b.idle_remaining_sec != null && b.state === 'idle' ? `Auto-save in ${fmtAge(b.idle_remaining_sec)}` : ''; }

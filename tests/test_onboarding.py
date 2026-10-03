@@ -35,7 +35,7 @@ class OnboardingTests(unittest.TestCase):
         result = onboarding.status()
         self.assertFalse(result['completed'])
         self.assertEqual(result['enabled_providers'], [])
-        self.assertEqual([p['id'] for p in result['providers']], ['claude', 'codex', 'gemini'])
+        self.assertEqual([p['id'] for p in result['providers']], ['claude', 'codex', 'gemini', 'ollama'])
         self.assertTrue(all(p['available'] and not p['enabled'] for p in result['providers']))
         self.assertFalse((self.state / 'onboarding.json').exists())
         self.assertTrue(all(p['install_url'].startswith('https://') for p in result['providers']))
@@ -50,7 +50,7 @@ class OnboardingTests(unittest.TestCase):
         self.assertFalse(onboarding.enabled('codex'))
         self.assertEqual(stat.S_IMODE((self.state / 'onboarding.json').stat().st_mode), 0o600)
         self.assertEqual({p['id']: p['enabled'] for p in providers.available()},
-                         {'claude': True, 'codex': False, 'gemini': True})
+                         {'claude': True, 'codex': False, 'gemini': True, 'ollama': False})
 
     def test_reset_clears_only_choices_and_keeps_sessions_archives_settings_and_accounts(self):
         kept = {'blades.db': b'SESSIONS', 'defaults.json': b'{"port":12345}',
@@ -108,11 +108,11 @@ class OnboardingTests(unittest.TestCase):
         self.assertTrue(onboarding.enabled('codex'))
 
     def test_unsupported_cli_discovery_is_informational_only(self):
-        self.candidates['ollama'] = [{'path': '/example/ollama', 'source': 'test'}]
+        self.candidates['copilot'] = [{'path': '/example/copilot', 'source': 'test'}]
         result = onboarding.status()
-        self.assertEqual(result['other_clis'][0]['id'], 'ollama')
+        self.assertEqual(result['other_clis'][0]['id'], 'copilot')
         self.assertFalse(result['other_clis'][0]['supported'])
-        self.assertIsNone(providers.executable('ollama'))
+        self.assertIsNone(providers.executable('copilot'))
 
     def test_auth_cache_is_reused_and_explicit_recheck_refreshes_it(self):
         onboarding.auth_status('claude', '/example/claude')

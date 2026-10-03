@@ -52,10 +52,34 @@ node --check blades/static/app.js
 
 See README.md and docs/SETUP.md for installation, native authentication and setup-agent instructions. Tests use isolated state; real terminal integration uses a unique tmux socket and fake provider without model credentials.
 
+## Ollama source checkpoint (2026-10-03)
+
+An isolated source-only change adds explicitly selected **Ollama chat** with a
+saved installed model name. Launch requires the loopback daemon to confirm cloud
+is disabled and to list that exact model. Missing backend/model/policy evidence
+blocks launch; no model call, download, sign-in or service change occurs during
+setup. Native chat gets no automatic project instructions or coding tools.
+
+Ollama completion and native transcript identity are unavailable: no automatic
+wind-down, bulk save-state or exact conversation resume is advertised. Existing
+terminal snapshots and failure-preserving close behavior remain in use. See
+[docs/OLLAMA.md](docs/OLLAMA.md) for setup, experimental status-API compatibility,
+native CLI/model-race limits and bounded terminal retention.
+
+Safe checks: `python3 -B tests/test_ollama_offline.py` (14 isolated cases), plus
+`node tests/test_ollama_setup_offline.js` and `node --check blades/static/app.js`.
+Setup distinguishes saved model readiness from unsaved edits and never labels an
+unavailable backend as signed in or ready. Existing onboarding expectations include the
+new opt-in entry; their application-importing suites were not run in this source
+pass. No live model, tmux session, provider configuration, service or active
+checkout was touched. Deployment and live acceptance remain separate. This is
+based on the public main checkpoint; the separate unpublished project-location
+and tablet-input changes need deliberate integration later.
+
 ## Current status
 
-**Last updated**: 2026-09-28
-**State**: Shareable onboarding and portability upgrade implemented and deployed. All 130 tests pass in this release with independently installed dependencies and an isolated user profile, including real tmux and WebSocket integration. The earlier portability build also passed from a checkout path containing spaces. Mobile onboarding, selected-provider launching, first project registration, persistence, and reset were verified. Existing managed sessions survive service migration/restart.
+**Last updated**: 2026-10-03
+**State**: Ollama provider source candidate awaiting review/deployment; earlier release status follows. Shareable onboarding and portability upgrade implemented and deployed. All 130 tests pass in this release with independently installed dependencies and an isolated user profile, including real tmux and WebSocket integration. The earlier portability build also passed from a checkout path containing spaces. Mobile onboarding, selected-provider launching, first project registration, persistence, and reset were verified. Existing managed sessions survive service migration/restart.
 **Recent fix**: Setup Copy buttons include a synchronous HTTP fallback. Clipboard writes were verified from fresh loopback and Tailscale pages after replacing the native macOS clipboard with a unique test value. Existing tabs retain old code until reloaded; content-versioned assets and an explicit update/reload notice now make interface updates visible without automatically interrupting sessions.
 **Publication**: This repository starts with clean source history. Private application state, credentials and host-specific deployment files are excluded. A license for the project's own code is not yet selected; bundled assets have separate license notices.
 **Next steps**: Exercise first-time native provider sign-in on each new host; background status checks deliberately do not authenticate providers or test a model request.

@@ -61,7 +61,15 @@ def new_session(name, cwd, prompt_text, shell_only=False, resume_id=None, provid
         if not binary:
             raise RuntimeError(f"{provider} CLI is not installed")
         environment = {"PATH": providers.environment_for(binary)["PATH"]}
-        if provider == "codex":
+        if provider == "ollama":
+            from . import onboarding, ollama
+            if resume_id:
+                raise RuntimeError("Ollama exact conversation resume is not supported")
+            model = ollama.validate_model(onboarding.preferences()['ollama_model'])
+            args = [sys.executable, os.path.join(install.REPO, "blades", "ollama.py"),
+                    "--binary", binary, "--model", model]
+            prompt_text = ""  # Native chat is not a coding agent; never inject project instructions.
+        elif provider == "codex":
             notify = [sys.executable, os.path.join(install.REPO, "hooks", "codex-notify.py")]
             args = [binary]
             if resume_id:

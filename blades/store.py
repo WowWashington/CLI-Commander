@@ -83,7 +83,7 @@ def _row(r):
 
 
 def create(name, slug, project, cwd, provider="claude"):
-    if provider not in ("claude", "codex", "gemini", "shell"):
+    if provider not in ("claude", "codex", "gemini", "ollama", "shell"):
         raise ValueError("unknown provider")
     now = time.time()
     with _lock:

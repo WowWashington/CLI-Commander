@@ -94,7 +94,7 @@ class OnboardingApiTests(unittest.TestCase):
         tmuxctl.new_session.assert_called_once()
         self.assertEqual(tmuxctl.new_session.call_args.kwargs['provider'], 'codex')
         enabled = {item['id']: item['enabled'] for item in self.client.get('/api/providers').json}
-        self.assertEqual(enabled, {'claude': False, 'codex': True, 'gemini': False})
+        self.assertEqual(enabled, {'claude': False, 'codex': True, 'gemini': False, 'ollama': False})
 
     def test_reset_preserves_active_interaction_archived_resume_and_host_data(self):
         self.assertEqual(self.post('/api/onboarding', {'enabled_providers': ['codex']}).status_code, 200)
@@ -171,7 +171,8 @@ class OnboardingApiTests(unittest.TestCase):
         self.client.get('/api/onboarding')
         self.assertEqual(onboarding._check_auth.call_count, calls)
         self.client.get('/api/onboarding?refresh=1')
-        self.assertEqual(onboarding._check_auth.call_count, calls + 3)
+        refreshed = [call.args[0] for call in onboarding._check_auth.call_args_list[calls:]]
+        self.assertCountEqual(refreshed, ['claude', 'codex', 'gemini', 'ollama'])
         tmuxctl.new_session.assert_not_called()
 
 

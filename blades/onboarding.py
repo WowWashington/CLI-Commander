@@ -16,7 +16,7 @@ import time
 
 from . import config
 
-SUPPORTED = ('claude', 'codex', 'gemini')
+SUPPORTED = ('claude', 'codex', 'gemini', 'ollama')
 AUTH_CACHE_SECONDS = 30
 AUTH_TIMEOUT_SECONDS = 4
 _auth_cache = {}
@@ -24,6 +24,12 @@ _lock = threading.RLock()
 _probe_locks = {name: threading.Lock() for name in SUPPORTED}
 
 GUIDES = {
+    'ollama': {
+        'install_url': 'https://docs.ollama.com/quickstart',
+        'auth_url': 'https://docs.ollama.com/cli',
+        'auth_args': ['list'],
+        'auth_help': 'Start Ollama on this host at 127.0.0.1:11434 with cloud disabled and prepare a local model yourself. The daemon must report cloud.disabled=true from /api/status; older servers fail closed. Enter its exact installed name in setup. Chat only: no project tools, automatic close or exact conversation resume. Checks only list models; they do not generate, pull or sign in.',
+    },
     'claude': {
         'install_url': 'https://code.claude.com/docs/en/setup',
         'auth_url': 'https://code.claude.com/docs/en/authentication',
@@ -61,7 +67,8 @@ def preferences():
     complete = data.get('completed') is True and valid
     return {'completed': complete,
             'enabled_providers': [name for name in SUPPORTED if complete and name in selected],
-            'executable_overrides': overrides if complete else {}}
+            'executable_overrides': overrides if complete else {},
+            'ollama_model': data.get('ollama_model', '') if isinstance(data.get('ollama_model', ''), str) else ''}
 
 
 def enabled(provider):
@@ -85,6 +92,9 @@ def _check_auth(provider, binary):
     from . import providers
     if not binary:
         return {'state': 'unknown', 'detail': 'Install this CLI to set up its account.'}
+    if provider == 'ollama':
+        from . import ollama
+        return ollama.status(binary, preferences()['ollama_model'])
     if provider == 'gemini':
         return _gemini_auth_presence()
     args = [binary, 'auth', 'status', '--json'] if provider == 'claude' else [binary, 'login', 'status']
@@ -115,7 +125,8 @@ def _check_auth(provider, binary):
 def auth_status(provider, binary, refresh=False):
     if provider not in SUPPORTED:
         return {'state': 'unknown', 'detail': 'This CLI is not supported for managed sessions.'}
-    key = (provider, binary, os.environ.get('CODEX_HOME'), os.environ.get('GEMINI_CLI_HOME'), config.HOME)
+    key = (provider, binary, os.environ.get('CODEX_HOME'), os.environ.get('GEMINI_CLI_HOME'), config.HOME,
+           preferences()['ollama_model'] if provider == 'ollama' else None)
     with _probe_locks[provider]:
         now = time.monotonic()
         cached = _auth_cache.get(key)
@@ -141,7 +152,7 @@ def status(refresh=False):
                         'auth_command': shlex.join([binary or name, *guide['auth_args']]),
                         'auth_help': guide['auth_help']})
     other = []
-    for name, label in (('copilot', 'GitHub Copilot CLI'), ('ollama', 'Ollama')):
+    for name, label in (('copilot', 'GitHub Copilot CLI'),):
         detected = providers.discover(name)
         if detected:
             other.append({'id': name, 'label': label, 'available': True, 'supported': False,
@@ -159,7 +170,7 @@ def configure(payload):
     selected = payload.get('enabled_providers')
     if (not isinstance(selected, list) or not selected
             or any(not isinstance(name, str) or name not in SUPPORTED for name in selected)):
-        raise ValueError('Choose at least one supported CLI: Claude, Codex, or Gemini')
+        raise ValueError('Choose at least one supported CLI: Claude, Codex, Gemini, or Ollama')
     overrides = payload.get('executable_overrides', {})
     if not isinstance(overrides, dict) or any(key not in SUPPORTED for key in overrides):
         raise ValueError('Executable choices must name supported CLIs')
@@ -167,7 +178,14 @@ def configure(payload):
     with _lock:
         # Preserve a previous explicit installation choice when the UI only
         # changes enablement. A reset is the separate action that clears it.
-        saved = preferences()['executable_overrides']
+        previous = preferences()
+        saved = previous['executable_overrides']
+        model = payload.get('ollama_model', previous['ollama_model'])
+        if 'ollama' in selected:
+            from . import ollama
+            model = ollama.validate_model(model)
+        elif not isinstance(model, str):
+            raise ValueError('Ollama model must be text')
         for name, chosen in overrides.items():
             if chosen is None:
                 saved.pop(name, None)
@@ -182,7 +200,7 @@ def configure(payload):
                 raise ValueError(f'{name.capitalize()} is not available on this Mac; install it and recheck')
         config.save_json(config.path('onboarding.json'),
                          {'version': 1, 'completed': True, 'enabled_providers': selected,
-                          'executable_overrides': saved})
+                          'executable_overrides': saved, 'ollama_model': model})
     return status()
 
 

@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from . import config
 
-PROVIDER_IDS = ('claude', 'codex', 'gemini')
+PROVIDER_IDS = ('claude', 'codex', 'gemini', 'ollama')
 
 
 def environment_for(binary):
@@ -92,6 +92,8 @@ def available():
          'detail': 'OpenAI Codex CLI · sign in with ChatGPT using codex login'},
         {'id': 'gemini', 'label': 'Gemini', 'available': bool(executable('gemini')),
          'detail': 'Google Gemini CLI · sign in on first launch'},
+        {'id': 'ollama', 'label': 'Ollama chat', 'available': bool(executable('ollama')),
+         'opt_in': True, 'detail': 'Explicit model · chat only · manual close · no exact resume'},
     ]
     for item in items:
         item['enabled'] = item['id'] in enabled

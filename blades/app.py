@@ -116,7 +116,7 @@ def _open_blade(slug, shell_only=False, provider="claude", resume_id=None):
         abort(404, "unknown project")
     if not project["exists"]:
         abort(400, "project path does not exist")
-    if provider not in ("claude", "codex", "gemini"):
+    if provider not in providers.PROVIDER_IDS:
         abort(400, "unknown provider")
     if not shell_only and not resume_id:
         from . import onboarding
@@ -124,13 +124,20 @@ def _open_blade(slug, shell_only=False, provider="claude", resume_id=None):
             abort(409, "Enable this assistant in Settings → Assistants & setup first")
     if not shell_only and not providers.executable(provider):
         abort(400, f"{provider} CLI is not installed")
+    if not shell_only and provider == "ollama":
+        from . import onboarding, ollama
+        if resume_id:
+            abort(409, "Ollama exact conversation resume is not supported")
+        check = ollama.status(providers.executable(provider), onboarding.preferences()['ollama_model'])
+        if check['state'] != 'ready':
+            abort(409, check['detail'])
     with _open_lock:
         if server_config.status()["restart_required"] and not os.environ.get("BLADES_PORT"):
             abort(409, "Restart CLI Commander on the saved port before opening another session")
         if resume_id and any(b.get("session_id") == resume_id for b in store.live()):
             abort(409, "This conversation is already open in another blade")
         name = tmuxctl.next_name(slug)
-        text = "" if shell_only or resume_id else prompts.render(project)
+        text = "" if shell_only or resume_id or provider == "ollama" else prompts.render(project)
         store.create(name, slug, project["name"], project["path"], provider="shell" if shell_only else provider)
         if resume_id:
             store.set_state(name, "starting", session_id=resume_id)
@@ -149,6 +156,8 @@ def _open_blade(slug, shell_only=False, provider="claude", resume_id=None):
             abort(500, str(e))
         if shell_only:
             store.set_state(name, "idle", note="shell; automatic close disabled")
+        elif provider == "ollama":
+            store.set_state(name, "unknown", note="Ollama chat: completion unknown; manual close only; no exact resume")
         return store.get(name)
 
 
@@ -472,7 +481,7 @@ def run_command(cmd: dict, targets="all", include_legacy=False) -> dict:
     names, results = [], {}
     for blade in requested:
         name = blade["name"]
-        if blade["state"] != "idle" or blade.get("provider", "claude") == "shell" or winddown.is_active(name):
+        if blade["state"] != "idle" or blade.get("provider", "claude") in ("shell", "ollama") or winddown.is_active(name):
             results[name] = "not idle: skipped"
         else:
             names.append(name)

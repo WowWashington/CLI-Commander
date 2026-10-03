@@ -171,7 +171,8 @@ class OnboardingApiTests(unittest.TestCase):
         self.client.get('/api/onboarding')
         self.assertEqual(onboarding._check_auth.call_count, calls)
         self.client.get('/api/onboarding?refresh=1')
-        self.assertEqual(onboarding._check_auth.call_count, calls + 3)
+        refreshed = [call.args[0] for call in onboarding._check_auth.call_args_list[calls:]]
+        self.assertCountEqual(refreshed, ['claude', 'codex', 'gemini', 'ollama'])
         tmuxctl.new_session.assert_not_called()
 
 

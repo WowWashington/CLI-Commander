@@ -232,6 +232,19 @@ class LifecycleTest(unittest.TestCase):
         store.apply_hook(self.name, "Stop", {})
         self.assertTrue(lifecycle.proven_idle(store.get(self.name)))
 
+    def test_untracked_subagent_stop_keeps_idle_and_attention(self):
+        # Observed: internal helpers send SubagentStop without SubagentStart after Stop.
+        self.blade(idle=False)
+        store.apply_hook(self.name, "UserPromptSubmit", {"prompt": "do it"})
+        store.apply_hook(self.name, "Stop", {})
+        store.apply_hook(self.name, "SubagentStop", {"agent_id": "a14cc9d5303aa5244", "agent_type": ""})
+        self.assertEqual(store.get(self.name)["state"], "idle")
+        self.assertTrue(lifecycle.proven_idle(store.get(self.name)))
+        store.apply_hook(self.name, "Notification", {"notification_type": "permission_prompt", "message": "Claude needs your permission"})
+        store.apply_hook(self.name, "SubagentStop", {"agent_id": "a783add47eb34b391", "agent_type": ""})
+        self.assertEqual(store.get(self.name)["state"], "attention")
+        self.assertEqual(store.get(self.name)["note"], "Claude needs your permission")
+
     def test_explicit_background_tool_blocks_main_stop_until_new_session_start(self):
         self.blade()
         payload = {"tool_name": "Bash", "tool_use_id": "tool-1",

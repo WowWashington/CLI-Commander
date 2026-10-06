@@ -16,12 +16,17 @@ const providerLabel = b => b.provider === 'shell' || b.shell ? 'Shell' : b.provi
 const stateLabel = b => b.idle_pending ? 'Closing soon' : ({ busy: 'Running', attention: 'Needs you', idle: 'Idle', closing: 'Saving', starting: 'Starting', unknown: 'Active · status unknown' }[b.state] || b.state);
 const storage = { get(key) { try { return localStorage.getItem(key) || ''; } catch (_) { return ''; } }, set(key, value) { try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); return true; } catch (_) { return false; } } };
 const draftKey = name => 'blades.draft.' + name;
+// Terminal typing mode is per device: 'auto' | 'live' | 'standard'.
+const touchDevice = () => matchMedia('(any-pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+const typingSetting = () => ['live', 'standard'].includes(storage.get('blades.typing')) ? storage.get('blades.typing') : 'auto';
+const liveTyping = () => typingSetting() === 'live' || (typingSetting() === 'auto' && touchDevice());
 const assistantName = p => p.id === 'codex' ? 'Codex · ChatGPT' : p.id === 'gemini' ? 'Gemini' : p.id === 'claude' ? 'Claude' : p.label;
 const pageVersion = $('meta[name="ui-version"]')?.content;
 
 /* ---------- projects panel ---------- */
 function projBySlug(slug) { return S.projects.find(p => p.slug === slug); }
 function renderProjects() {
+  renderOpenSessions();
   const box = $('#projects'); box.innerHTML = '';
   const f = S.filter.toLowerCase();
   for (const p of S.projects) {
@@ -96,7 +101,64 @@ async function loadProjects() {
   S.layout = { order: S.projects.map(p => p.slug), hidden: S.projects.filter(p => p.hidden).map(p => p.slug) };
   _projSig = ''; renderProjectsIfChanged();
   $('#setupProjectCount').textContent = `${S.projects.length} registered ${S.projects.length === 1 ? 'project' : 'projects'}`;
+  renderProjectList();
   if (!S.active) renderHomeIndex();
+}
+
+function renderInstanceName(name) {
+  S.instanceName = name || ''; const node = $('#instanceName');
+  node.textContent = S.instanceName; node.hidden = !S.instanceName; node.dataset.kind = /prod/i.test(S.instanceName) ? 'prod' : /dev/i.test(S.instanceName) ? 'dev' : '';
+  if (document.activeElement !== $('#instanceInput')) $('#instanceInput').value = S.instanceName; renderStrip();
+}
+function renderTyping() {
+  const ua = navigator.userAgent, os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPhone/iPad' : /Mac/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /Linux|X11/.test(ua) ? 'Linux or Android desktop mode' : 'Unknown system';
+  const browser = /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'browser';
+  $('#typingMode').value = typingSetting();
+  $('#typingDetected').textContent = `This device: ${os} · ${browser} · ${touchDevice() ? 'touch screen' : 'no touch screen'}. Automatic uses ${touchDevice() ? 'Live' : 'Standard'} here.`;
+}
+function renderProjectList() {
+  const box = $('#projectList'); if (!box) return; box.innerHTML = '';
+  if (!S.projects.length) { box.append(el('p', 'hint', 'No projects yet.')); return; }
+  for (const p of S.projects) {
+    if (p.slug === 'shell-commands') continue;
+    const row = el('div', 'path-row'); const copy = el('div', 'path-copy');
+    copy.append(el('strong', '', p.name), el('span', 'mono hint', tildePath(p.path) + (p.exists === false ? ' · missing' : '')));
+    const remove = el('button', '', 'Remove');
+    if (p.blades?.length) { remove.disabled = true; remove.title = 'Close this project’s live sessions first'; }
+    remove.onclick = async () => {
+      if (!confirm(`Remove “${p.name}” from CLI Commander?\n\nThe folder and its files are not changed. You can add it again later.`)) return;
+      busy(remove, 'Removing…');
+      try { await api('DELETE', '/api/projects/' + encodeURIComponent(p.slug)); toast('Project removed'); await loadProjects(); loadAudit(); }
+      catch (e) { toast(e.message); unbusy(remove); }
+    };
+    row.append(copy, remove); box.append(row);
+  }
+}
+async function loadLocations() {
+  try { S.locations = await api('GET', '/api/locations'); S.homeDir = S.locations.home; renderLocations(); renderProjectList(); }
+  catch (e) { $('#locationList').textContent = 'Could not read code locations: ' + e.message; }
+}
+async function saveLocations(paths, message) {
+  try { S.locations = await api('PUT', '/api/locations', { paths }); renderLocations(); toast(message); loadAudit(); return true; }
+  catch (e) { $('#locationError').textContent = e.message; $('#locationError').hidden = false; return false; }
+}
+function renderLocations() {
+  const data = S.locations, box = $('#locationList'), sug = $('#locationSuggest'); box.innerHTML = ''; sug.innerHTML = ''; $('#locationError').hidden = true;
+  const current = data.locations.map(l => l.path);
+  $('#locationAdd').hidden = data.env_override;
+  if (data.env_override) box.append(el('p', 'hint', 'Set by BLADES_PROJECTS_ROOT on this Mac. Ask your setup agent to remove it to manage locations here.'));
+  if (!current.length) box.append(el('p', 'hint', 'No code locations yet.'));
+  for (const l of data.locations) {
+    const row = el('div', 'path-row'); const copy = el('div', 'path-copy');
+    copy.append(el('strong', 'mono', tildePath(l.path)), el('span', 'hint', l.exists ? `${l.folders} ${l.folders === 1 ? 'folder' : 'folders'} · ${l.git} git` : 'Folder missing'));
+    row.append(copy);
+    if (!data.env_override) { const remove = el('button', '', 'Remove'); remove.title = 'Stop listing folders from here. Registered projects stay.'; remove.onclick = () => saveLocations(current.filter(p => p !== l.path), 'Code location removed'); row.append(remove); }
+    box.append(row);
+  }
+  if (!data.env_override && data.suggestions.length) {
+    sug.append(el('span', 'hint', 'Found on this Mac:'));
+    for (const l of data.suggestions) { const chip = el('button', 'chip', '+ ' + tildePath(l.path)); chip.title = `${l.folders} folders · ${l.git} git`; chip.onclick = () => saveLocations([...current, l.path], 'Code location added'); sug.append(chip); }
+  }
 }
 
 /* ---------- blades / terminals ---------- */
@@ -190,11 +252,11 @@ function renderSetup() {
   const step = S.setupStep || 0, body = $('#setupBody'); body.innerHTML = '';
   const selected = selectedAssistants(), pending = selected.filter(p => p.auth?.state !== 'ready');
   document.querySelectorAll('#setupProgress span').forEach(node => node.classList.toggle('current', Number(node.dataset.step) === step));
-  $('#setupBack').hidden = step !== 1; $('#setupNext').disabled = !!S.setupBusy || (step === 0 && !selected.length);
-  $('#setupFootnote').textContent = step === 0 ? 'Installed assistants only' : step === 1 ? 'Sign in through the official CLI' : 'Change these choices in Settings';
+  $('#setupBack').hidden = step !== 1 && step !== 2; $('#setupNext').disabled = !!S.setupBusy || (step === 0 && !selected.length) || (step === 2 && !S.setupLoc);
+  $('#setupFootnote').textContent = ['Installed assistants only', 'Sign in through the official CLI', 'Folders stay where they are', 'Change these choices in Settings'][step];
   if (step === 0) {
     $('#setupTitle').textContent = 'Choose your assistants'; $('#setupIntro').textContent = 'We found these on your Mac. Pick the ones you want in each project’s + menu.';
-    $('#setupNext').textContent = pending.length ? 'Continue →' : 'Finish setup';
+    $('#setupNext').textContent = 'Continue →';
     for (const p of S.providers) {
       const row = el('div', 'setup-choice'); const label = el('label', 'setup-choice-label');
       const check = el('input'); check.type = 'checkbox'; check.dataset.setupProvider = p.id; check.checked = !!p.available && S.setupSelected.has(p.id); check.disabled = !p.available || !!S.setupBusy;
@@ -217,7 +279,7 @@ function renderSetup() {
   } else if (step === 1) {
     $('#setupTitle').textContent = S.setupShowAllGuides ? 'Sign-in guides' : pending.length ? 'Complete sign-in' : 'Your assistants are ready';
     $('#setupIntro').textContent = S.setupShowAllGuides ? 'Signed-in assistants can keep their current accounts. Use these official commands in Terminal when you need to sign in.' : pending.length ? 'Use Terminal on this Mac. Follow the assistant’s official sign-in flow, then check again here.' : 'The selected assistants report that they are signed in.';
-    $('#setupNext').textContent = 'Finish setup';
+    $('#setupNext').textContent = 'Continue →';
     for (const p of S.setupShowAllGuides ? selected : pending) {
       const card = el('section', 'auth-guide'); const head = el('div', 'auth-guide-head'); head.append(el('strong', '', assistantName(p)), el('span', 'auth-state ' + (p.auth?.state || 'unknown'), authLabel(p))); card.append(head);
       if (p.auth?.detail) card.append(el('p', 'hint', p.auth.detail));
@@ -227,8 +289,10 @@ function renderSetup() {
       const guide = officialLink(p.auth_url, 'Official sign-in guide ↗'); if (guide) card.append(guide);
     }
     if (!pending.length) body.append(el('div', 'setup-success', '✓ Signed in on this Mac'));
-    else body.append(el('p', 'setup-auth-note', 'You can finish setup now. Any assistant that still needs sign-in will prompt when opened. CLI Commander never asks for your password or API key.'));
+    else body.append(el('p', 'setup-auth-note', 'You can continue now. Any assistant that still needs sign-in will prompt when opened. CLI Commander never asks for your password or API key.'));
     const recheck = el('button', '', 'Check sign-in again'); recheck.onclick = recheckSetup; body.append(recheck);
+  } else if (step === 2) {
+    renderSetupProjects(body);
   } else {
     $('#setupTitle').textContent = 'Your workspace is ready'; $('#setupIntro').textContent = 'Use a project’s + button to start the assistant you want. Your sessions stay on this Mac.';
     $('#setupNext').textContent = S.setupPendingLaunch ? 'Continue to session →' : 'Done';
@@ -249,14 +313,97 @@ async function recheckSetup() {
 async function nextSetup() {
   if (S.setupBusy || S.setupChecking) return;
   if (S.setupFailed) return openSetup();
-  if (S.setupStep === 2) { $('#setupModal').classList.remove('show'); const pending = S.setupPendingLaunch; S.setupPendingLaunch = null; if (pending) openLauncher(pending.slug); return; }
+  if (S.setupStep === 3) { $('#setupModal').classList.remove('show'); const pending = S.setupPendingLaunch; S.setupPendingLaunch = null; if (pending) openLauncher(pending.slug); return; }
+  if (S.setupStep === 2) return saveSetupProjects();
   const selected = selectedAssistants(); if (!selected.length) return;
   if (S.setupStep === 0 && selected.some(p => p.auth?.state !== 'ready')) { S.setupStep = 1; renderSetup(); return; }
   S.setupBusy = true; $('#setupBody').inert = true; $('#setupBack').disabled = true; $('#setupNext').disabled = true; $('#setupNext').textContent = 'Saving…';
-  try { await api('POST', '/api/onboarding', { enabled_providers: selected.map(p => p.id) }); await loadOnboarding(); S.setupStep = 2; }
+  try { await api('POST', '/api/onboarding', { enabled_providers: selected.map(p => p.id) }); await loadOnboarding(); S.setupStep = 2; S.setupLoc = null; }
   catch (e) { showSetupError('Could not save setup: ' + e.message); }
-  finally { S.setupBusy = false; $('#setupBody').inert = false; $('#setupBack').disabled = false; if (S.setupStep === 2) renderSetup(); else { $('#setupNext').disabled = false; $('#setupNext').textContent = 'Finish setup'; } }
+  finally { S.setupBusy = false; $('#setupBody').inert = false; $('#setupBack').disabled = false; if (S.setupStep === 2) { renderSetup(); loadSetupLocations(); } else { $('#setupNext').disabled = false; $('#setupNext').textContent = 'Continue →'; } }
 }
+/* Setup step 3: where the user's code lives, and which folders to add as projects. */
+async function loadSetupLocations() {
+  try {
+    const data = await api('GET', '/api/locations'); S.homeDir = data.home;
+    const known = [...data.locations, ...data.suggestions];
+    S.setupLoc = { env: data.env_override, info: Object.fromEntries(known.map(l => [l.path, l])), order: known.map(l => l.path), chosen: new Set(data.locations.map(l => l.path)), folders: [], picked: new Set() };
+    await refreshSetupFolders();
+  } catch (e) { showSetupError('Could not read code locations: ' + e.message); S.setupLoc = { env: false, info: {}, order: [], chosen: new Set(), folders: [], picked: new Set() }; }
+  if (S.setupStep === 2) renderSetup();
+}
+async function refreshSetupFolders() {
+  const loc = S.setupLoc, paths = loc.order.filter(p => loc.chosen.has(p));
+  loc.folders = paths.length ? await api('POST', '/api/locations/preview', { paths }) : [];
+  const visible = new Set(loc.folders.map(f => f.path)); loc.picked = new Set([...loc.picked].filter(p => visible.has(p)));
+}
+function renderSetupProjects(body) {
+  $('#setupTitle').textContent = 'Where is your code?';
+  $('#setupIntro').textContent = 'Choose the folders that hold your projects, then pick the projects to add. Nothing is moved or changed.';
+  const loc = S.setupLoc;
+  if (!loc) { body.append(el('p', 'hint', 'Looking for code folders on this Mac…')); $('#setupNext').textContent = 'Continue →'; return; }
+  const picked = loc.picked.size; $('#setupNext').textContent = picked ? `Add ${picked} ${picked === 1 ? 'project' : 'projects'} →` : 'Skip for now →';
+  body.append(el('div', 'setup-subhead', 'Code locations'));
+  if (loc.env) body.append(el('p', 'setup-auth-note', 'BLADES_PROJECTS_ROOT sets the code location on this Mac. Ask your setup agent to remove it to choose folders here.'));
+  if (!loc.order.length) body.append(el('p', 'hint', 'No common code folders found. Add the folder that holds your projects below.'));
+  for (const path of loc.order) {
+    const info = loc.info[path] || {}; const row = el('div', 'setup-choice'); const label = el('label', 'setup-choice-label');
+    const check = el('input'); check.type = 'checkbox'; check.checked = loc.chosen.has(path); check.disabled = loc.env || !!S.setupBusy;
+    check.onchange = async () => { check.checked ? loc.chosen.add(path) : loc.chosen.delete(path); await updateSetupFolders(); };
+    const copy = el('span', 'setup-choice-copy'); copy.append(el('strong', 'mono', tildePath(path)), el('small', 'hint', info.folders == null ? 'Added by you' : `${info.folders} ${info.folders === 1 ? 'folder' : 'folders'} · ${info.git} git`));
+    label.append(check, copy); row.append(label); body.append(row);
+  }
+  if (!loc.env) {
+    const add = el('form', 'setup-add-location'); const input = el('input'); input.placeholder = '~/path/to/your/code'; input.autocomplete = 'off'; input.autocapitalize = 'off'; input.spellcheck = false;
+    const button = el('button', '', 'Add folder'); button.type = 'submit'; add.append(input, button);
+    add.onsubmit = async (e) => {
+      e.preventDefault(); const value = input.value.trim(); if (!value) return;
+      if (!(value.startsWith('/') || value.startsWith('~/'))) { showSetupError('Enter an absolute folder path or one starting with ~/.'); return; }
+      const path = value.startsWith('~/') ? S.homeDir ? S.homeDir + value.slice(1) : value : value;
+      if (!loc.order.includes(path)) loc.order.push(path); loc.chosen.add(path);
+      if (!(await updateSetupFolders())) { loc.chosen.delete(path); loc.order = loc.order.filter(p => p !== path || loc.info[p]); renderSetup(); }
+    };
+    body.append(add);
+  }
+  const folders = loc.folders;
+  const head = el('div', 'setup-subhead'); head.append(el('span', '', folders.length ? `Projects found · ${folders.length}` : 'Projects found'));
+  if (folders.length) { const all = el('button', 'setup-inline-button', picked === folders.length ? 'Select none' : 'Select all'); all.onclick = () => { loc.picked = picked === folders.length ? new Set() : new Set(folders.map(f => f.path)); renderSetup(); }; head.append(all); }
+  body.append(head);
+  if (!folders.length) body.append(el('p', 'hint', loc.chosen.size ? 'No new folders in the chosen locations. You can add projects later from Settings.' : 'Choose a code location to see its folders, or skip and add projects later.'));
+  else {
+    const list = el('div', 'setup-folders');
+    for (const f of folders) {
+      const label = el('label', 'setup-folder'); const check = el('input'); check.type = 'checkbox'; check.checked = loc.picked.has(f.path);
+      check.onchange = () => { check.checked ? loc.picked.add(f.path) : loc.picked.delete(f.path); const n = loc.picked.size; $('#setupNext').textContent = n ? `Add ${n} ${n === 1 ? 'project' : 'projects'} →` : 'Skip for now →'; };
+      const copy = el('span', 'setup-choice-copy'); copy.append(el('strong', '', f.name), el('small', 'hint', [f.is_git && 'git', f.has_state && 'STATE.md', tildePath(f.root)].filter(Boolean).join(' · ')));
+      label.append(check, copy); list.append(label);
+    }
+    body.append(list);
+  }
+}
+async function updateSetupFolders() {
+  $('#setupError').hidden = true; $('#setupBody').inert = true;
+  try { await refreshSetupFolders(); return true; }
+  catch (e) { showSetupError(e.message); return false; }
+  finally { $('#setupBody').inert = false; renderSetup(); }
+}
+async function saveSetupProjects() {
+  const loc = S.setupLoc; if (!loc) return;
+  S.setupBusy = true; $('#setupBody').inert = true; $('#setupBack').disabled = true; $('#setupNext').disabled = true; $('#setupNext').textContent = 'Saving…';
+  try {
+    if (!loc.env) await api('PUT', '/api/locations', { paths: loc.order.filter(p => loc.chosen.has(p)) });
+    const failed = [];
+    for (const path of loc.picked) { try { await api('POST', '/api/audit/register', { path }); } catch (e) { failed.push(`${path.split('/').pop()}: ${e.message}`); } }
+    await loadProjects(); loadAudit();
+    if (failed.length) { loc.picked = new Set(); await refreshSetupFolders(); showSetupError('Some projects were not added. ' + failed.join(' · ')); return; }
+    S.setupStep = 3;
+  } catch (e) { showSetupError('Could not save code locations: ' + e.message); }
+  finally {
+    S.setupBusy = false; $('#setupBody').inert = false; $('#setupBack').disabled = false;
+    if (S.setupStep === 3) renderSetup(); else { const keep = $('#setupError').textContent, shown = !$('#setupError').hidden; renderSetup(); if (shown) showSetupError(keep); }
+  }
+}
+function tildePath(path) { return S.homeDir && (path === S.homeDir || path.startsWith(S.homeDir + '/')) ? '~' + path.slice(S.homeDir.length) : path; }
 function copyWithSelection(text, container) {
   const active = document.activeElement, selection = window.getSelection();
   const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange()) : [];
@@ -294,18 +441,57 @@ async function copySetupText(text, button) {
     toast('Could not copy automatically. Command selected: press ⌘C / Ctrl+C, or touch and hold to copy.');
   }
 }
-function openProjectDialog(launchAfter = false) {
+function openProjectDialog(launchAfter = false, mode = 'new') {
   S.projectLaunchAfterAdd = launchAfter; $('#newModal').classList.remove('show'); $('#projectError').hidden = true;
-  $('#projectPath').value = ''; $('#projectName').value = ''; $('#projectModal').classList.add('show');
-  if (!isMobile()) $('#projectPath').focus();
+  $('#projectPath').value = ''; $('#projectName').value = ''; $('#projectNewName').value = ''; $('#projectGit').checked = true;
+  $('#projectModal').classList.add('show'); setProjectMode(mode); loadProjectLocations();
+}
+async function loadProjectLocations() {
+  // Offer code locations for the new folder; default to the first one.
+  try {
+    const data = await api('GET', '/api/locations'); S.homeDir = data.home;
+    const paths = data.locations.map(l => tildePath(l.path)), list = $('#projectParentList'); list.innerHTML = '';
+    for (const p of paths) { const o = el('option'); o.value = p; list.append(o); }
+    if (!$('#projectParent').value) $('#projectParent').value = paths[0] || '~/Projects';
+  } catch (_) { if (!$('#projectParent').value) $('#projectParent').value = '~/Projects'; }
+  updateProjectPreview();
+}
+function setProjectMode(mode) {
+  S.projectMode = mode; const isNew = mode === 'new';
+  $('#projectModeNew').setAttribute('aria-selected', isNew); $('#projectModeExisting').setAttribute('aria-selected', !isNew);
+  $('#projectNewFields').hidden = !isNew; $('#projectExistingFields').hidden = isNew; $('#projectError').hidden = true;
+  $('#projectSave').textContent = isNew ? 'Create project' : 'Add project';
+  $('#projectFootnote').textContent = isNew ? 'Nothing outside the new folder is touched.' : 'Your existing files stay in place.';
+  updateProjectPreview();
+  if (!isMobile()) (isNew ? $('#projectNewName') : $('#projectPath')).focus();
+}
+function projectFolderName(name) { return name.trim().replace(/[\/\\:]+/g, '-').trim(); }
+function updateProjectPreview() {
+  const folder = projectFolderName($('#projectNewName').value), parent = $('#projectParent').value.trim().replace(/\/+$/, '');
+  $('#projectPreview').textContent = folder && parent ? `Creates ${parent}/${folder}` : '';
 }
 async function addProject() {
   if ($('#projectSave').disabled) return;
-  const path = $('#projectPath').value.trim(), name = $('#projectName').value.trim();
-  if (!path || !(path.startsWith('/') || path.startsWith('~/'))) { $('#projectError').textContent = 'Enter an absolute folder path or one starting with ~/.'; $('#projectError').hidden = false; return; }
-  const button = $('#projectSave'); busy(button, 'Adding…'); $('#projectError').hidden = true;
-  try { const result = await api('POST', '/api/projects', { path, ...(name ? { name } : {}) }); await loadProjects(); $('#projectModal').classList.remove('show'); toast('Project added'); if (S.projectLaunchAfterAdd) openLauncher(result.slug || result.project?.slug); }
-  catch (e) { $('#projectError').textContent = e.message; $('#projectError').hidden = false; }
+  const isNew = S.projectMode === 'new', fail = msg => { $('#projectError').textContent = msg; $('#projectError').hidden = false; };
+  let body;
+  if (isNew) {
+    const name = $('#projectNewName').value.trim(), parent = $('#projectParent').value.trim();
+    if (!name) return fail('Enter a project name.');
+    if (parent && !(parent.startsWith('/') || parent.startsWith('~'))) return fail('Enter an absolute location or one starting with ~/.');
+    body = { create: true, name, git: $('#projectGit').checked, ...(parent ? { parent } : {}) };
+  } else {
+    const path = $('#projectPath').value.trim(), name = $('#projectName').value.trim();
+    if (!path || !(path.startsWith('/') || path.startsWith('~/'))) return fail('Enter an absolute folder path or one starting with ~/.');
+    body = { path, ...(name ? { name } : {}) };
+  }
+  const button = $('#projectSave'); busy(button, isNew ? 'Creating…' : 'Adding…'); $('#projectError').hidden = true;
+  try {
+    const result = await api('POST', '/api/projects', body); await loadProjects(); loadAudit(); $('#projectModal').classList.remove('show');
+    toast(isNew ? `Created ${result.path ? tildePath(result.path) : 'project'}` : 'Project added');
+    // A new project goes straight on to choosing its assistant.
+    if (isNew || S.projectLaunchAfterAdd) openLauncher(result.slug);
+  }
+  catch (e) { fail(e.message); }
   finally { unbusy(button); }
 }
 async function loadServerConfig() {
@@ -334,16 +520,25 @@ function ensureTerm(name) {
   const term = new Terminal({ fontFamily: 'SF Mono, Menlo, monospace', fontSize: isMobile() ? 11 : 12.5, theme: { background: '#000000' }, cursorBlink: true, scrollback: 5000, allowProposedApi: true });
   const fit = new FitAddon.FitAddon(); term.loadAddon(fit); term.open(wrap);
   const t = { term, fit, ws: null, wrap, attempts: 0, reconnectTimer: null, disposed: false, connected: false, status: 'Connecting' };
-  t.sendResize = () => { if (S.active !== name || S.settings) return; try { fit.fit(); if (t.ws?.readyState === WebSocket.OPEN) t.ws.send('\x00' + JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })); } catch (_) {} };
+  // Hidden tabs and collapsed layouts report bogus sizes; never resize the shared tmux window from them.
+  t.sendResize = () => {
+    if (S.active !== name || S.settings || document.hidden || !wrap.clientWidth || !wrap.clientHeight) return;
+    // Always (re)assert this view's size: tmux ignores an unchanged size, and a
+    // missed send would otherwise leave the window at another client's size.
+    try { fit.fit(); if (t.ws?.readyState === WebSocket.OPEN) t.ws.send('\x00' + JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })); } catch (_) {}
+  };
   t.connect = () => {
     if (t.disposed || t.ws && t.ws.readyState < WebSocket.CLOSING) return;
     clearTimeout(t.reconnectTimer);
     if (!navigator.onLine) { t.status = 'Offline'; renderConnection(); return; }
     t.status = t.connected ? 'Reconnecting' : 'Connecting'; renderConnection();
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws/term/${encodeURIComponent(name)}`); t.ws = ws;
+    // Attach at this browser's size so tmux and the CLI don't redraw at a default size first.
+    let dims; try { if (wrap.clientWidth) dims = fit.proposeDimensions(); } catch (_) {}
+    const size = dims?.cols && dims?.rows ? `?cols=${dims.cols}&rows=${dims.rows}` : '';
+    const ws = new WebSocket(`${proto}://${location.host}/ws/term/${encodeURIComponent(name)}${size}`); t.ws = ws;
     ws.onmessage = e => { if (t.ws === ws && !t.disposed) term.write(e.data); };
-    ws.onopen = () => { if (t.disposed || t.ws !== ws) return ws.close(); if (t.connected) term.reset(); t.connected = true; t.attempts = 0; t.status = 'Connected'; renderConnection(); setTimeout(t.sendResize, 50); };
+    ws.onopen = () => { if (t.disposed || t.ws !== ws) return ws.close(); if (t.connected) term.write('\x1b[!p\x1b[H\x1b[2J'); /* soft reset + clear screen; keep scrollback */ t.connected = true; t.attempts = 0; t.status = 'Connected'; renderConnection(); setTimeout(t.sendResize, 50); };
     ws.onerror = () => ws.close();
     ws.onclose = () => {
       if (t.disposed || t.ws !== ws) return;
@@ -353,8 +548,60 @@ function ensureTerm(name) {
       t.reconnectTimer = setTimeout(t.connect, delay);
     };
   };
+  // xterm keeps the current line in its hidden textarea until Enter. Phone
+  // keyboards then autocorrect or re-compose earlier words, and xterm's
+  // before/after diff sends word fragments. Empty it after each finished
+  // input (after xterm's own deferred read), so there is no context to rewrite.
+  const area = term.textarea; let composing = false;
+  {
+    // Keyboard diagnostics, only while ~/.cli_blades/kbdebug.on exists on the host:
+    // records what a touch keyboard sends to /api/debug/keyboard (keyboard-debug.log).
+    const log = [], t0 = performance.now(), on = () => S.kbdebug, rec = (o) => on() && log.push({ ms: Math.round(performance.now() - t0), ...o, value: area.value, sel: [area.selectionStart, area.selectionEnd] });
+    for (const type of ['keydown', 'keyup', 'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend', 'selectionchange'])
+      wrap.addEventListener(type, e => { if (e.target === area) rec({ type, key: e.key, code: e.keyCode, inputType: e.inputType, data: e.data, composing: e.isComposing }); }, true);
+    term.onData(d => rec({ type: 'SENT', data: d }));
+    setInterval(() => { if (log.length) api('POST', '/api/debug/keyboard', { ua: navigator.userAgent, events: log.splice(0) }).catch(() => {}); }, 2000);
+    setTimeout(() => { if (on()) toast('Keyboard diagnostics on'); }, 1500);
+  }
+  const clearArea = () => setTimeout(() => { if (!composing && area.value) area.value = ''; }, 0);
+  area.setAttribute('autocomplete', 'off'); area.setAttribute('data-gramm', 'false');
+  {
+    // Touch keyboards (e.g. Samsung, Gboard) compose every word. xterm only
+    // sends it on compositionend, so the cursor sits still and the word
+    // vanishes and reappears on space. Send composition changes live instead:
+    // keep the common prefix, backspace the rest, type the new tail.
+    // xterm registers its textarea listeners first (capture), so intercept on
+    // the wrapper's capture phase, before the event reaches the textarea, and
+    // keep IME events away from xterm's composition helper and its
+    // keyCode-229 textarea diff. Hardware keys still go to xterm untouched.
+    let sent = [];
+    const send = data => { if (data) term.input(data, true); };
+    const sync = text => {
+      const next = [...(text || '')]; let same = 0;
+      while (same < sent.length && same < next.length && sent[same] === next[same]) same++;
+      send('\x7f'.repeat(sent.length - same) + next.slice(same).join('')); sent = next;
+    };
+    let imeKey = false;
+    // Mode is read per event, so changing it in Settings applies immediately.
+    const own = (type, handler) => wrap.addEventListener(type, e => { if (e.target === area && liveTyping()) handler(e); }, true);
+    own('keydown', e => { imeKey = e.keyCode === 229; if (imeKey || composing) e.stopPropagation(); });
+    own('compositionstart', e => { e.stopPropagation(); composing = true; sent = []; });
+    own('compositionupdate', e => { e.stopPropagation(); sync(e.data); });
+    own('compositionend', e => { e.stopPropagation(); sync(e.data); composing = false; sent = []; clearArea(); });
+    own('input', e => {
+      if (e.inputType === 'insertCompositionText' || composing) { e.stopPropagation(); return; }
+      // Text from an IME key (keyCode 229) that xterm never saw as a keydown.
+      if (imeKey && e.inputType === 'insertText' && e.data) { e.stopPropagation(); send(e.data); }
+      else if (imeKey && e.inputType === 'deleteContentBackward') { e.stopPropagation(); send('\x7f'); }
+      imeKey = false; clearArea();
+    });
+  }
+  area.addEventListener('compositionstart', () => { if (!liveTyping()) composing = true; });
+  area.addEventListener('compositionend', () => { if (!liveTyping()) { composing = false; setTimeout(clearArea, 0); } });
+  area.addEventListener('input', e => { if (!liveTyping() && !e.isComposing && !composing) clearArea(); });
   // Input is sent once only. Never queue keystrokes across a dropped connection.
   term.onData(data => { if (t.ws?.readyState === WebSocket.OPEN) t.ws.send(data); else toast('Connection interrupted. Reconnect before typing.'); });
+  term.textarea?.addEventListener('focus', () => requestAnimationFrame(t.sendResize));
   S.terms[name] = t; t.connect(); return t;
 }
 function dropTerm(name) { const t = S.terms[name]; if (!t) return; t.disposed = true; clearTimeout(t.reconnectTimer); try { t.ws?.close(); } catch (_) {} t.term.dispose(); t.wrap.remove(); delete S.terms[name]; }
@@ -376,21 +623,37 @@ function activate(name) {
   renderComposer(); renderConnection();
   renderStrip(); renderBladebar(); renderProjectsIfChanged(); syncMobileNav();
 }
+const STATE_ORDER = { attention: 0, busy: 1, starting: 2, unknown: 3, idle: 4, closing: 5 };
+function openSessions() { return [...S.blades].sort((a, b) => (STATE_ORDER[a.state] ?? 3) - (STATE_ORDER[b.state] ?? 3) || a.project.localeCompare(b.project) || a.name.localeCompare(b.name)); }
+function sessionLabel(b) {
+  const dup = S.blades.filter(x => x.slug === b.slug).length > 1;
+  return `${b.project} · ${providerLabel(b)}${dup ? ' ' + b.name.split('-').pop() : ''}`;
+}
+function renderOpenSessions() {
+  const box = $('#openList'); box.innerHTML = ''; const f = S.filter.toLowerCase();
+  const list = openSessions().filter(b => !f || (b.project + ' ' + providerLabel(b)).toLowerCase().includes(f));
+  $('#openBox').hidden = !list.length; $('#openCount').textContent = String(list.length);
+  for (const b of list) {
+    const c = el('div', 'child open-session' + (b.name === S.active ? ' active' : '')); c.dataset.state = b.state;
+    c.append(el('span', 'dot'), el('span', 'clabel', sessionLabel(b)), el('span', 'cstate', stateLabel(b) + (b.note ? ' · ' + b.note : '')), el('span', 'cage', fmtAge(b.age_sec)));
+    c.title = `${b.name}\n${b.cwd || ''}`; c.onclick = () => { activate(b.name); setView('terminal'); };
+    box.append(c);
+  }
+}
 function renderStrip() {
   const strip = $('#strip'); strip.innerHTML = '';
   const counts = { idle: 0, busy: 0, attention: 0, closing: 0, starting: 0 };
-  for (const b of S.blades) {
-    counts[b.state] = (counts[b.state] || 0) + 1;
-    if (b.state !== 'attention' && !isMobile()) continue;
+  for (const b of S.blades) counts[b.state] = (counts[b.state] || 0) + 1;
+  // Every open session, most urgent first, so none is hidden under its project.
+  for (const b of openSessions()) {
     const t = el('div', 'tile' + (b.name === S.active ? ' active' : '')); t.dataset.state = b.state;
-    const n = b.name.split('-').pop(); const dup = S.blades.filter(x => x.slug === b.slug).length > 1;
-    t.append(el('span', 'dot')); t.append(el('span', 'label', b.project + (dup ? ' ' + n : '')));
+    t.append(el('span', 'dot')); t.append(el('span', 'label', sessionLabel(b)));
     t.title = `${b.name}\n${b.note || b.state}`; t.onclick = () => { activate(b.name); setView('terminal'); }; strip.append(t);
   }
   const sm = $('#summary'); sm.innerHTML = '';
   const add = (k, label, cls) => { const s = el('span', cls || ''); s.innerHTML = `<b>${counts[k] || 0}</b> ${label}`; sm.append(s); };
   add('attention', 'need you', 'attn'); add('busy', 'busy'); add('idle', 'idle'); if (counts.starting) add('starting', 'starting');
-  document.title = (counts.attention ? `(${counts.attention}) ` : '') + 'CLI Commander';
+  document.title = (counts.attention ? `(${counts.attention}) ` : '') + (S.instanceName ? S.instanceName + ' · ' : '') + 'CLI Commander';
 }
 function renderBladebar() {
   const b = bladeByName(S.active);
@@ -572,7 +835,7 @@ async function loadAudit() {
   for (const f of u) {
     const row = el('div', 'unreg'); row.append(el('div', 'name', f.name));
     const btns = el('div', 'btns');
-    const reg = el('button', '', 'Register'); reg.title = 'Append a row to ~/projects.md'; reg.onclick = async () => { try { await api('POST', '/api/audit/register', { name: f.name }); toast(`Registered ${f.name}`); await loadProjects(); await loadAudit(); } catch (e) { toast(e.message); } };
+    const reg = el('button', '', 'Register'); reg.title = 'Add ' + f.path + ' as a project'; reg.onclick = async () => { try { await api('POST', '/api/audit/register', { path: f.path }); toast(`Registered ${f.name}`); await loadProjects(); await loadAudit(); } catch (e) { toast(e.message); } };
     const ign = el('button', '', 'Ignore'); ign.title = 'Hide this folder from the audit'; ign.onclick = async () => { await api('POST', '/api/audit/ignore', { name: f.name }); await loadAudit(); };
     btns.append(reg, ign); row.append(btns);
     row.append(el('div', 'sub', `${f.is_git ? 'git' : 'no git'}${f.remote ? ' · remote' : ''}${f.has_state ? ' · STATE.md' : ''} · ${f.files} items · ${f.modified}`));
@@ -671,7 +934,7 @@ async function openSettings() {
   $('#settings').hidden = false; $('#home').hidden = true;
   document.querySelectorAll('.term').forEach(w => w.classList.remove('active'));
   await Promise.all([loadCommands(), loadQuick()]); renderCommands(); renderBroadcast(); renderProtected(); renderQuick();
-  loadOnboarding().catch(e => { $('#setupSummary').textContent = 'Could not check assistants: ' + e.message; }); loadServerConfig();
+  loadOnboarding().catch(e => { $('#setupSummary').textContent = 'Could not check assistants: ' + e.message; }); loadServerConfig(); loadLocations(); renderProjectList(); renderTyping();
   try { const st = await api('GET', '/api/settings'); $('#globalPrompt').value = st.prompt_template || ''; $('#idleTimeout').value = (st.idle_timeout_min ?? 1440) / 60; $('#idleGrace').value = st.idle_grace_sec ?? 120; renderIdleHelp(); } catch (_) {}
   $('#keybar').hidden = true; renderComposer(); renderConnection(); renderBladebar(); syncMobileNav();
 }
@@ -830,7 +1093,7 @@ async function sendComposer(e) {
 }
 async function loadStatus() {
   try {
-    const status = await api('GET', '/api/status'); const badge = $('#accessBadge');
+    const status = await api('GET', '/api/status'); const badge = $('#accessBadge'); S.kbdebug = !!status.kbdebug; renderInstanceName(status.instance_name);
     if (pageVersion && status.ui_version && status.ui_version !== pageVersion) {
       $('#updateBtn').hidden = false; $('header').classList.add('has-update');
     }
@@ -875,10 +1138,26 @@ $('#setupReset').onclick = async () => {
   finally { button.disabled = false; button.textContent = 'Reset setup'; }
 };
 $('#settingsAddProject').onclick = () => openProjectDialog(false);
+$('#instanceSave').onclick = async () => {
+  const button = $('#instanceSave'); busy(button, 'Saving…');
+  try { const result = await api('POST', '/api/server-config', { instance_name: $('#instanceInput').value }); renderInstanceName(result.instance_name); toast('Name saved'); }
+  catch (e) { toast(e.message); } finally { unbusy(button); }
+};
+$('#typingMode').onchange = e => { storage.set('blades.typing', e.target.value === 'auto' ? '' : e.target.value); renderTyping(); toast('Typing mode saved on this device'); };
+$('#locationAdd').onsubmit = async (e) => {
+  e.preventDefault(); const input = $('#locationPath'), value = input.value.trim(); if (!value || !S.locations) return;
+  if (!(value.startsWith('/') || value.startsWith('~/'))) { $('#locationError').textContent = 'Enter an absolute folder path or one starting with ~/.'; $('#locationError').hidden = false; return; }
+  if (await saveLocations([...S.locations.locations.map(l => l.path), value], 'Code location added')) input.value = '';
+};
 $('#emptyAddProject').onclick = () => openProjectDialog(true);
 $('#newAddProject').onclick = () => openProjectDialog(true);
 $('#projectClose').onclick = () => $('#projectModal').classList.remove('show');
 $('#projectSave').onclick = addProject;
+$('#sideAddProject').onclick = () => openProjectDialog(false);
+$('#projectModeNew').onclick = () => setProjectMode('new');
+$('#projectModeExisting').onclick = () => setProjectMode('existing');
+$('#projectNewName').oninput = updateProjectPreview;
+$('#projectParent').oninput = updateProjectPreview;
 $('#setupPortSave').onclick = saveServerConfig;
 $('#newSessionBtn').onclick = () => openLauncher();
 $('#newClose').onclick = () => $('#newModal').classList.remove('show');
@@ -926,11 +1205,15 @@ $('#kbBtn').onclick = () => { const t = S.terms[S.active]; if (t) t.term.focus()
 document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => { if (e.target === m) { if (m.id === 'setupModal') closeSetup(); else m.classList.remove('show'); } }));
 window.addEventListener('resize', () => { resizeViewport(); renderStrip(); if (!isMobile()) { $('#side').classList.remove('show'); $('#backdrop').classList.remove('show'); } syncMobileNav(); });
 window.visualViewport?.addEventListener('resize', resizeViewport);
+window.addEventListener('focus', () => { const t = S.terms[S.active]; if (t) requestAnimationFrame(t.sendResize); });
 window.addEventListener('online', recoverConnections);
 window.addEventListener('offline', () => { for (const t of Object.values(S.terms)) { t.status = 'Offline'; clearTimeout(t.reconnectTimer); t.ws?.close(); } renderConnection(); $('#accessBadge').textContent = 'Offline'; $('#accessBadge').classList.remove('verified'); });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { saveDraft(); for (const t of Object.values(S.terms)) { clearTimeout(t.reconnectTimer); t.ws?.close(); } }
-  else recoverConnections();
+  // Brief tab switches keep the connection, so the shared tmux window isn't resized
+  // to another client and back. Long-hidden tabs (and backgrounded phones) still detach.
+  clearTimeout(S.hiddenTimer);
+  if (document.hidden) { saveDraft(); S.hiddenTimer = setTimeout(() => { if (document.hidden) for (const t of Object.values(S.terms)) { clearTimeout(t.reconnectTimer); t.ws?.close(); } }, 120000); }
+  else { recoverConnections(); const t = S.terms[S.active]; if (t) requestAnimationFrame(t.sendResize); }
 });
 window.addEventListener('pagehide', saveDraft);
 document.addEventListener('keydown', e => {

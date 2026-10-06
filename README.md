@@ -20,7 +20,7 @@ python -m blades configure --port 5090
 python -m blades serve
 ```
 
-Open [the local console](http://127.0.0.1:5090). On first run, **Choose your assistants**, follow the sign-in instructions, and **Finish setup**. Add an existing folder from **Settings → Projects → Add project**. No pre-existing project index is required.
+Open [the local console](http://127.0.0.1:5090). On first run, **Choose your assistants**, follow the sign-in instructions, then tell setup **Where is your code?** and tick the projects to add. Manage code locations and projects later in **Settings**. No pre-existing project index is required.
 
 For scripted setup:
 

@@ -204,3 +204,13 @@ class ApiTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TerminalSizeTest(unittest.TestCase):
+    def test_wide_screens_are_accepted_and_extremes_clamped(self):
+        from blades import app
+        self.assertEqual(app._terminal_size(506, 113), (506, 113))
+        self.assertEqual(app._terminal_size("5000", "9"), (1000, 9))
+        self.assertEqual(app._terminal_size(3, 1), (20, 5))
+        with self.assertRaises(ValueError):
+            app._terminal_size("wide", 40)

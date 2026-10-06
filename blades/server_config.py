@@ -4,7 +4,7 @@ from pathlib import Path
 import socket
 import threading
 
-from . import config, tmuxctl
+from . import config, locations, tmuxctl
 
 _lock = threading.RLock()
 
@@ -13,7 +13,7 @@ def status():
     saved = config.server_settings()
     port = saved.get("port", config.PORT)
     override = os.environ.get("BLADES_PORT")
-    return {"port": config.PORT, "configured_port": port,
+    return {"port": config.PORT, "configured_port": port, "instance_name": config.instance_name(),
             "env_override": bool(override), "restart_required": port != config.PORT,
             "next_url": f"http://127.0.0.1:{port}",
             "instructions": "Close live CLI Commander sessions before changing ports so their status hooks stay connected. "
@@ -24,8 +24,8 @@ def status():
 
 
 def configure(payload):
-    if not isinstance(payload, dict) or not payload or set(payload) - {"port", "projects_root"}:
-        raise ValueError("Choose a port or project discovery folder")
+    if not isinstance(payload, dict) or not payload or set(payload) - {"port", "projects_root", "project_roots", "instance_name"}:
+        raise ValueError("Choose a port, code locations or an instance name")
     with _lock:
         saved = config.server_settings()
         if "port" in payload:
@@ -50,6 +50,20 @@ def configure(payload):
             folder = Path(folder).expanduser()
             if not folder.is_absolute() or not folder.is_dir():
                 raise ValueError("Project discovery folder must be an existing absolute path")
-            saved["projects_root"] = str(folder.resolve())
+            saved["project_roots"] = [str(folder.resolve())]
+            saved.pop("projects_root", None)
+        if "instance_name" in payload:
+            name = payload["instance_name"]
+            if not isinstance(name, str) or len(name.strip()) > 40 or any(ord(c) < 32 for c in name):
+                raise ValueError("Instance name must be text of at most 40 characters")
+            if name.strip():
+                saved["instance_name"] = name.strip()
+            else:
+                saved.pop("instance_name", None)
+        if "project_roots" in payload:
+            if os.environ.get("BLADES_PROJECTS_ROOT"):
+                raise RuntimeError("BLADES_PROJECTS_ROOT overrides saved code locations. Ask your setup agent to remove that override first")
+            saved["project_roots"] = locations.validate(payload["project_roots"])
+            saved.pop("projects_root", None)
         config.save_json(config.path("server.json"), saved)
         return status()

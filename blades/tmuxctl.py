@@ -45,7 +45,7 @@ def next_name(slug):
     return f"{PREFIX}{slug}-{n}"
 
 
-def new_session(name, cwd, prompt_text, shell_only=False, resume_id=None, provider="claude"):
+def new_session(name, cwd, prompt_text, shell_only=False, resume_id=None, provider="claude", title=None):
     """Launch a local provider without changing its saved account/configuration."""
     from . import install, providers
     s = config.settings()
@@ -79,6 +79,8 @@ def new_session(name, cwd, prompt_text, shell_only=False, resume_id=None, provid
             args = [binary, "--settings", install.hooks_settings_path()]
             if resume_id:
                 args += ["--resume", resume_id]
+            elif title:
+                args += ["--name", title]  # display name: prompt box, /resume picker, terminal title
         command = shlex.join(args)
         if prompt_text:
             command += f' "$(cat {shlex.quote(prompt_file)})"'

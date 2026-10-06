@@ -1,24 +1,22 @@
-"""Project audit: unregistered folders under ~/Projects, and the health of
+"""Project audit: unregistered folders in code locations, and the health of
 every registered project (path, git, remote, STATE.md age, pending handoff).
 Run nightly after wind-downs; also available live in the dashboard."""
 import os
 import re
 import time
 
-from . import config, projects, prompts
+from . import config, locations, projects, prompts
 
 REPORT_DIR = config.path("reports")
-DEFAULT_IGNORE = ["node_modules", "venv", "__pycache__"]
 STALE_STATE_DAYS = 14
 
 
-def project_root():
-    return os.path.expanduser(os.environ.get("BLADES_PROJECTS_ROOT") or
-                             config.server_settings().get("projects_root") or os.path.join(config.HOME, "Projects"))
+def project_roots():
+    return locations.configured()
 
 
 def ignore_list():
-    return set(config.load_json(config.path("ignore.json"), DEFAULT_IGNORE))
+    return locations.ignore_list()
 
 
 def add_ignore(name):
@@ -27,39 +25,24 @@ def add_ignore(name):
 
 
 def unregistered():
-    root = project_root()
-    known = {p["path"].rstrip("/") for p in projects.parse_projects_md()}
-    ig = ignore_list()
-    out = []
-    try:
-        names = sorted(os.listdir(root))
-    except OSError:
-        return out
-    for n in names:
-        full = os.path.join(root, n)
-        if n.startswith(".") or n in ig or not os.path.isdir(full) or full in known:
-            continue
-        g = projects.git_info(full)
-        try:
-            mtime = max([os.stat(full).st_mtime] + [os.stat(os.path.join(full, f)).st_mtime
-                                                   for f in os.listdir(full)[:100]
-                                                   if os.path.exists(os.path.join(full, f))])
-        except OSError:
-            mtime = 0
-        out.append({"name": n, "path": full, "is_git": g["is_git"],
-                    "remote": g["remote"]["url"] if g["remote"] else None,
-                    "has_state": os.path.exists(os.path.join(full, "STATE.md")),
-                    "files": len(os.listdir(full)) if os.path.isdir(full) else 0,
-                    "modified": time.strftime("%Y-%m-%d", time.localtime(mtime))})
-    return out
+    return locations.unregistered()
 
 
-def register(name, keywords=None):
-    """Register a discovered child folder without editing external indexes."""
-    if not isinstance(name, str) or not name or name in (".", "..") or os.path.basename(name) != name:
-        raise RuntimeError("Choose a discovered project folder")
+def register(name=None, keywords=None, path=None):
+    """Register a discovered child folder of a code location; no external indexes change."""
+    if path is not None:
+        if not isinstance(path, str) or not os.path.isabs(path) or not locations.contains(path):
+            raise RuntimeError("Choose a folder inside one of your code locations")
+        target = path
+    else:
+        if not isinstance(name, str) or not name or name in (".", "..") or os.path.basename(name) != name:
+            raise RuntimeError("Choose a discovered project folder")
+        target = next((os.path.join(root, name) for root in project_roots()
+                       if os.path.isdir(os.path.join(root, name))), None)
+        if not target:
+            raise RuntimeError("That folder is not inside a code location")
     try:
-        return projects.add_project(os.path.join(project_root(), name))
+        return projects.add_project(target)
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
 
@@ -109,7 +92,7 @@ def write_report():
         lines.append(f"## {title} ({len(items)})")
         lines.extend(fmt(i) for i in items) if items else lines.append("- none")
         lines.append("")
-    sect("Unregistered folders under ~/Projects", r["unregistered"],
+    sect("Unregistered folders in code locations", r["unregistered"],
          lambda i: f"- {i['name']} — {'git' if i['is_git'] else 'no git'}{', remote ' + i['remote'] if i['remote'] else ''}, {'STATE.md' if i['has_state'] else 'no STATE.md'}, modified {i['modified']}")
     sect("Registered but path missing", r["missing"], lambda i: f"- {i['name']} ({i['path']})")
     sect("Uncommitted changes", r["dirty"], lambda i: f"- {i['name']}: {i['files']} files")

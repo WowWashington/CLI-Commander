@@ -15,6 +15,7 @@
   <header>
     <button id="menuBtn" title="Projects">☰</button>
     <button class="brand" id="homeBtn" title="Home: overview of all open sessions">CLI <span>Commander</span><span class="brand-mark">/</span></button>
+    <span id="instanceName" class="instance-name" hidden></span>
     <span id="accessBadge" class="access-badge" title="Checking access configuration">Checking access</span>
     <button id="updateBtn" class="update-notice" hidden aria-label="Update available. Save draft and reload" title="A newer version is available. Reload saves your draft; sessions keep running."><span>Update available · </span>Reload</button>
 
@@ -28,10 +29,15 @@
   <aside id="side">
     <div class="tools">
       <input id="filter" placeholder="filter projects…" autocomplete="off">
+      <button id="sideAddProject" title="New project or add an existing folder" aria-label="Add project">+</button>
       <button id="editBtn" title="Show hidden / reorder">Edit</button>
       <button id="sideClose" title="Close">✕</button>
     </div>
-    <div class="sect"><span>Projects · open CLIs nest below each</span></div>
+    <div id="openBox" hidden>
+      <div class="sect"><span>Open sessions</span><span id="openCount"></span></div>
+      <div id="openList"></div>
+    </div>
+    <div class="sect"><span>Projects</span></div>
     <div id="projects"></div>
     <div id="unregBox">
       <div class="sect"><span>Unregistered folders</span><span id="unregCount"></span></div>
@@ -76,12 +82,37 @@
         <p class="hint">Choose the assistants that appear in your project launcher. Their accounts stay on this Mac.</p>
         <div id="setupSummary" class="setup-summary"></div>
         <div class="row"><button id="setupReview" class="primary">Manage assistants</button><button id="setupRescan">Recheck sign-in</button><button id="setupReset">Reset setup</button></div>
-        <p class="hint">Reset clears assistant choices only. Sessions, archives, projects, and signed-in accounts are preserved.</p>
+        <p class="hint">Reset clears assistant choices only. Sessions, archives, projects, code locations, and signed-in accounts are preserved.</p>
+      </section>
+      <section class="set">
+        <h3>Code locations</h3>
+        <p class="hint">Folders that hold your projects. Their subfolders appear under Unregistered folders, ready to add.</p>
+        <div id="locationList" class="path-list"></div>
+        <div id="locationSuggest" class="row"></div>
+        <form id="locationAdd" class="row"><input id="locationPath" placeholder="~/Projects" autocomplete="off" autocapitalize="off" spellcheck="false"><button type="submit">Add location</button></form>
+        <p id="locationError" class="setup-error" role="status" hidden></p>
       </section>
       <section class="set">
         <h3>Projects</h3>
-        <p class="hint">Add an existing folder on this Mac, then open your preferred assistant from its + button.</p>
+        <p class="hint">Create a new project or add an existing folder on this Mac, then open your preferred assistant from its + button. Removing a project leaves its folder and files untouched.</p>
+        <div id="projectList" class="path-list"></div>
         <div class="row"><button id="settingsAddProject">+ Add project</button><span id="setupProjectCount" class="hint"></span></div>
+      </section>
+      <section class="set">
+        <h3>Typing on this device</h3>
+        <p class="hint">Saved in this browser only. Change it if letters repeat, vanish or jump while typing directly in the terminal. The message box below the terminal works the same in every mode.</p>
+        <div class="row"><label for="typingMode">Terminal keyboard</label>
+          <select id="typingMode">
+            <option value="auto">Automatic</option>
+            <option value="live">Live: Android keyboards (Samsung, Gboard, SwiftKey)</option>
+            <option value="standard">Standard: desktop, iPhone/iPad, Chinese/Japanese/Korean input</option>
+          </select></div>
+        <p id="typingDetected" class="hint"></p>
+        <details class="connection-help"><summary>Tested setups</summary><ul class="hint">
+          <li>Samsung tablet · Samsung Keyboard · Edge: Live</li>
+          <li>Mac · physical keyboard · any browser: Standard</li>
+          <li>iPhone/iPad, Gboard, SwiftKey: not tested yet. If typing misbehaves, try the other mode.</li>
+        </ul></details>
       </section>
       <section class="set">
         <h3>Session lifecycle</h3>
@@ -94,6 +125,8 @@
       <section class="set">
         <h3>Connection</h3>
         <p class="hint">Local and Tailscale access only. Changing the port requires a service restart.</p>
+        <div class="row"><label for="instanceInput">Name</label><input id="instanceInput" maxlength="40" placeholder="e.g. CLI Dev" autocomplete="off"><button id="instanceSave">Save name</button></div>
+        <p class="hint">Shown in the header and browser tab, so you can tell installations apart. Takes effect immediately.</p>
         <div class="row"><label for="setupPort">Port</label><input id="setupPort" type="number" min="1024" max="65535" step="1" value="5090"><button id="setupPortSave">Save port</button></div>
         <p id="setupPortStatus" class="hint" role="status"></p>
         <p class="hint">Save your work and close live sessions before changing ports. Your setup agent can restart the service.</p>
@@ -174,7 +207,7 @@
 
 <div class="modal" id="setupModal" role="dialog" aria-modal="true" aria-labelledby="setupTitle"><div class="box setup-box">
   <div class="modal-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h3 id="setupTitle">Choose your assistants</h3></div><button id="setupClose" aria-label="Close setup">✕</button></div>
-  <div id="setupProgress" class="setup-progress"><span data-step="0">1 · Assistants</span><span data-step="1">2 · Sign-in</span><span data-step="2">3 · Ready</span></div>
+  <div id="setupProgress" class="setup-progress"><span data-step="0">1 · Assistants</span><span data-step="1">2 · Sign-in</span><span data-step="2">3 · Projects</span><span data-step="3">4 · Ready</span></div>
   <p id="setupIntro" class="hint"></p><div id="setupBody"></div>
   <p id="setupError" class="setup-error" role="status" hidden></p>
   <div class="setup-footer"><button id="setupBack">Back</button><span id="setupFootnote" class="hint"></span><button id="setupNext" class="primary">Continue →</button></div>
@@ -182,11 +215,21 @@
 
 <div class="modal" id="projectModal" role="dialog" aria-modal="true" aria-labelledby="projectTitle"><div class="box project-box">
   <div class="modal-heading"><div><div class="eyebrow">YOUR WORKSPACE</div><h3 id="projectTitle">Add a project</h3></div><button id="projectClose" aria-label="Close add project">✕</button></div>
-  <p class="hint">Choose an existing folder on the Mac running CLI Commander.</p>
-  <label for="projectPath">Folder path</label><input id="projectPath" placeholder="~/Projects/my-project" autocomplete="off" autocapitalize="off" spellcheck="false">
-  <label for="projectName">Name <span class="hint">· optional</span></label><input id="projectName" placeholder="Use the folder name" autocomplete="off">
+  <div class="project-mode" role="tablist" aria-label="Project source"><button id="projectModeNew" role="tab" aria-selected="true">New project</button><button id="projectModeExisting" role="tab" aria-selected="false">Existing folder</button></div>
+  <div id="projectNewFields">
+    <p class="hint">Creates a new folder with a starter STATE.md on the Mac running CLI Commander, then lets you pick an assistant.</p>
+    <label for="projectNewName">Name</label><input id="projectNewName" placeholder="My project" autocomplete="off">
+    <label for="projectParent">Location</label><input id="projectParent" list="projectParentList" placeholder="~/Projects" autocomplete="off" autocapitalize="off" spellcheck="false"><datalist id="projectParentList"></datalist>
+    <label class="chk"><input type="checkbox" id="projectGit" checked> Initialize a git repository</label>
+    <p id="projectPreview" class="hint"></p>
+  </div>
+  <div id="projectExistingFields" hidden>
+    <p class="hint">Choose an existing folder on the Mac running CLI Commander.</p>
+    <label for="projectPath">Folder path</label><input id="projectPath" placeholder="~/Projects/my-project" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <label for="projectName">Name <span class="hint">· optional</span></label><input id="projectName" placeholder="Use the folder name" autocomplete="off">
+  </div>
   <p id="projectError" class="setup-error" role="status" hidden></p>
-  <div class="setup-footer"><span class="hint">Your existing files stay in place.</span><button id="projectSave" class="primary">Add project</button></div>
+  <div class="setup-footer"><span id="projectFootnote" class="hint">Nothing outside the new folder is touched.</span><button id="projectSave" class="primary">Create project</button></div>
 </div></div>
 
 <div class="modal" id="newModal" role="dialog" aria-modal="true" aria-labelledby="newTitle"><div class="box launch-box">

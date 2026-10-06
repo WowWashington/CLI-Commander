@@ -2,7 +2,10 @@
 
   serve                 run the web server (default)
   configure --port N    save a private listening port (restart required)
+  configure --projects-root DIR  set code locations (repeat for several)
+  configure --name LABEL         label this installation (header and tab title)
   add-project PATH      register a project folder (--name NAME optional)
+  remove-project SLUG   unregister a project; its folder is left untouched
   setup --status        discover installed assistants and sign-in readiness
   setup --enable IDS    enable chosen assistants (e.g. claude codex gemini)
   setup --reset         reset assistant choices; keep sessions and credentials
@@ -39,10 +42,20 @@ def main(argv):
         from . import server_config
         parser = argparse.ArgumentParser(description="Configure private CLI Commander host settings; restart afterwards")
         parser.add_argument("--port", type=int)
-        parser.add_argument("--projects-root")
+        parser.add_argument("--name", help='label for this installation, e.g. "CLI Dev"; empty clears it')
+        parser.add_argument("--projects-root", action="append", metavar="FOLDER",
+                            help="code location whose subfolders are offered as projects; repeat for several")
         opts = parser.parse_args(argv[1:])
+        payload = {"port": opts.port} if opts.port is not None else {}
+        if opts.name is not None:
+            payload["instance_name"] = opts.name
+        if opts.projects_root:
+            payload["project_roots"] = opts.projects_root
         try:
-            result = server_config.configure({key: value for key, value in vars(opts).items() if value is not None})
+            result = server_config.configure(payload)
+            if opts.projects_root:
+                from . import locations
+                result["code_locations"] = [item["path"] for item in locations.status()["locations"]]
             print(json.dumps(result, indent=2))
         except (ValueError, RuntimeError) as exc:
             parser.error(str(exc))
@@ -57,6 +70,19 @@ def main(argv):
             print(json.dumps(projects.add_project(opts.path, opts.name), indent=2))
         except ValueError as exc:
             parser.error(str(exc))
+    elif cmd == "remove-project":
+        import argparse
+        from . import projects, store
+        parser = argparse.ArgumentParser(description="Unregister a project; its folder and files are not changed")
+        parser.add_argument("slug")
+        opts = parser.parse_args(argv[1:])
+        if any(b["slug"] == opts.slug for b in store.live()):
+            parser.error("Close this project's live sessions before removing it")
+        try:
+            projects.remove_project(opts.slug)
+            print(json.dumps({"removed": opts.slug}))
+        except (ValueError, LookupError) as exc:
+            parser.error(str(exc).strip("'"))
     elif cmd == "setup":
         import argparse
         from . import onboarding

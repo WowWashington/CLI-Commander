@@ -93,8 +93,37 @@ class OnboardingApiTests(unittest.TestCase):
         self.assertEqual(opened.json['provider'], 'codex')
         tmuxctl.new_session.assert_called_once()
         self.assertEqual(tmuxctl.new_session.call_args.kwargs['provider'], 'codex')
+        self.assertRegex(tmuxctl.new_session.call_args.kwargs['title'], r'^Example · [A-Z][a-z]{2} \d{1,2}( #\d+)?$')
         enabled = {item['id']: item['enabled'] for item in self.client.get('/api/providers').json}
         self.assertEqual(enabled, {'claude': False, 'codex': True, 'gemini': False})
+
+    def test_code_locations_preview_save_and_register_through_api(self):
+        code = self.root / 'code'
+        (code / 'found').mkdir(parents=True)
+        preview = self.post('/api/locations/preview', {'paths': [str(code)]})
+        self.assertEqual(preview.status_code, 200, preview.json)
+        self.assertEqual([item['name'] for item in preview.json], ['found'])
+        self.assertEqual(self.post('/api/locations/preview', {'paths': ['relative']}).status_code, 400)
+        saved = self.client.put('/api/locations', json={'paths': [str(code)]}, headers=self.headers)
+        self.assertEqual(saved.status_code, 200, saved.json)
+        self.assertEqual([item['path'] for item in saved.json['locations']], [str(code.resolve())])
+        self.assertEqual(self.client.put('/api/locations', json={'paths': [str(code)]}).status_code, 403)
+        added = self.post('/api/audit/register', {'path': str(code / 'found')})
+        self.assertEqual(added.status_code, 200, added.json)
+        self.assertEqual(self.client.get('/api/locations').json['locations'][0]['folders'], 1)
+
+    def test_project_removal_waits_for_live_sessions(self):
+        self.assertEqual(self.post('/api/onboarding', {'enabled_providers': ['codex']}).status_code, 200)
+        self.assertEqual(self.launch('codex').status_code, 200)
+        blocked = self.client.delete(f'/api/projects/{self.slug}', headers=self.headers)
+        self.assertEqual(blocked.status_code, 409)
+        for blade in store.live():
+            store.set_state(blade['name'], 'closed')
+        removed = self.client.delete(f'/api/projects/{self.slug}', headers=self.headers)
+        self.assertEqual(removed.status_code, 200, removed.json)
+        self.assertTrue(self.project_dir.is_dir())
+        self.assertNotIn(self.slug, [p['slug'] for p in self.client.get('/api/projects').json])
+        self.assertEqual(self.client.delete(f'/api/projects/{self.slug}', headers=self.headers).status_code, 404)
 
     def test_reset_preserves_active_interaction_archived_resume_and_host_data(self):
         self.assertEqual(self.post('/api/onboarding', {'enabled_providers': ['codex']}).status_code, 200)
@@ -150,6 +179,7 @@ class OnboardingApiTests(unittest.TestCase):
         self.assertNotEqual(resumed.json['name'], archived_name)
         self.assertEqual(tmuxctl.new_session.call_args.kwargs['resume_id'], sid)
         self.assertEqual(tmuxctl.new_session.call_args.kwargs['provider'], 'codex')
+        self.assertRegex(tmuxctl.new_session.call_args.kwargs['title'], r'^Example · [A-Z][a-z]{2} \d{1,2}( #\d+)?$')
         self.assertEqual(tmuxctl.new_session.call_args.args[2], '')
         self.assertEqual(store.get(archived_name)['state'], 'closed')
 

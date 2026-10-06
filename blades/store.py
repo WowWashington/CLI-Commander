@@ -229,8 +229,15 @@ def apply_hook(blade, event, payload):
             new = "closing" if cur == "closing" else "busy"
         elif event == "SubagentStop":
             agents = set(json.loads(b.get("active_subagents") or "[]"))
-            if payload.get("agent_id"):
-                agents.discard(str(payload["agent_id"]))
+            agent = str(payload.get("agent_id") or "")
+            if agent not in agents:
+                # Claude's internal helpers report a stop without a start, often
+                # just after the main Stop. They are not new work: leave the
+                # state, note and completion evidence exactly as they were.
+                if sid or transcript:
+                    update(blade, **{k: v for k, v in {"session_id": sid, "transcript_path": transcript}.items() if v})
+                return cur
+            agents.discard(agent)
             update(blade, active_subagents=json.dumps(sorted(agents)))
             new = "closing" if cur == "closing" else "busy"
         elif event == "Stop":

@@ -14,7 +14,8 @@ The supported host is macOS with Python 3.11+, zsh and tmux. Clients can be phon
 
 - First-run onboarding discovers known CLI installation locations, lets users enable providers, checks supported sign-in status commands, and guides native sign-in. Credentials stay with each provider.
 - A single + per project opens a compact chooser of enabled assistants.
-- Settings can manage assistants, recheck sign-in, reset only onboarding choices, add project folders, and stage a private port change.
+- Onboarding steps: Assistants → Sign-in → Projects ("Where is your code?": choose code locations from detected common folders or a typed path, tick discovered subfolders to register, or skip) → Ready.
+- Settings can manage assistants, recheck sign-in, reset only onboarding choices, add/remove code locations, add/remove registered projects (folder untouched; blocked while live sessions exist; legacy projects.md rows can only be hidden), and stage a private port change.
 - The default port is 5090, configurable through `python -m blades configure --port N` or Settings. Restart is required; live sessions block port changes to preserve their hook connections.
 - The default inactivity window is 24 hours plus a 120-second grace period. Busy, protected, shell and unconfirmed sessions remain open.
 - Mobile composition keeps drafts in that browser; reconnect never replays ambiguous input.
@@ -23,7 +24,8 @@ The supported host is macOS with Python 3.11+, zsh and tmux. Clients can be phon
 
 - `config.py`, `server_config.py`: private settings, atomic writes, safe binds and configurable host port.
 - `onboarding.py`, `providers.py`: discovery, redacted authentication summaries, enablement, installation choices and exact native transcript lookup.
-- `projects.py`, `audit.py`: private JSON project registry, optional legacy Markdown registry, project facts and private audit reports.
+- `projects.py`, `audit.py`: private JSON project registry (add/remove, duplicate check by folder identity for case-insensitive paths), optional legacy Markdown registry, project facts and private audit reports.
+- `locations.py`: code locations (`project_roots` in `server.json`; legacy single `projects_root` honored; default `~/Projects`; `BLADES_PROJECTS_ROOT` overrides and locks), suggestions, preview and unregistered-folder discovery.
 - `tmuxctl.py`, `store.py`: provider launch, persistent identities and lifecycle evidence, retained ended panes.
 - `lifecycle.py`, `winddown.py`: serialized interaction, inactivity scheduling, immutable archives and missing-only restoration. Uncertainty or archive failure preserves the process.
 - `app.py`, `security.py`: same-origin HTTP/WebSocket API, terminal connections, project/setup/configuration routes and maintenance.
@@ -54,8 +56,11 @@ See README.md and docs/SETUP.md for installation, native authentication and setu
 
 ## Current status
 
-**Last updated**: 2026-09-28
-**State**: Shareable onboarding and portability upgrade implemented and deployed. All 130 tests pass in this release with independently installed dependencies and an isolated user profile, including real tmux and WebSocket integration. The earlier portability build also passed from a checkout path containing spaces. Mobile onboarding, selected-provider launching, first project registration, persistence, and reset were verified. Existing managed sessions survive service migration/restart.
-**Recent fix**: Setup Copy buttons include a synchronous HTTP fallback. Clipboard writes were verified from fresh loopback and Tailscale pages after replacing the native macOS clipboard with a unique test value. Existing tabs retain old code until reloaded; content-versioned assets and an explicit update/reload notice now make interface updates visible without automatically interrupting sessions.
-**Publication**: This repository starts with clean source history. Private application state, credentials and host-specific deployment files are excluded. A license for the project's own code is not yet selected; bundled assets have separate license notices.
-**Next steps**: Exercise first-time native provider sign-in on each new host; background status checks deliberately do not authenticate providers or test a model request.
+**Last updated**: 2026-10-06
+**State**: Onboarding, portability, project management and touch-device improvements implemented. 145 tests pass, including real tmux/WebSocket integration.
+**Projects**: Code locations (`project_roots` in server.json; legacy `projects_root` honored; default `~/Projects`; `BLADES_PROJECTS_ROOT` overrides). Setup has a Projects step ("Where is your code?"). Settings manages code locations and registered projects (remove leaves folders untouched; blocked while sessions are live; legacy projects.md rows can only be hidden). The Add project dialog creates a new folder (default: first code location) with a starter STATE.md and optional `git init`, registers it and opens the assistant chooser, or registers an existing folder. Folder identity (dev/inode) prevents case-variant duplicates on macOS.
+**Sessions**: The header strip and a sidebar "Open sessions" list show every live session, most urgent first. New Claude sessions launch with `--name "<Project> · <Mon D>[ #n]"`. An unmodified pre-rename "CLI Blades" prompt template is replaced by the current default. Claude's internal helpers send SubagentStop without SubagentStart; untracked SubagentStops no longer flip idle/attention sessions back to busy.
+**Terminal**: Android keyboards compose each word; in Live typing mode IME events are intercepted on the terminal wrapper's capture phase and composition changes are sent live as minimal backspace+tail diffs, and the hidden textarea is emptied after each input. Settings → "Typing on this device" (per browser: auto/live/standard; auto = Live on touch devices). Verified on a Samsung tablet (Samsung Keyboard, Edge); iPhone/iPad, Gboard and SwiftKey untested. Hidden tabs keep their terminal connection for 2 minutes; connections attach at the browser's size (`/ws/term/<name>?cols=&rows=`), the size is re-sent on activate/connect/visible/focus, sizes are clamped to 20–1000 columns and 5–500 rows, and reconnect keeps scrollback. Optional keyboard diagnostics: create `<BLADES_HOME>/kbdebug.on` to log touch-keyboard events to `keyboard-debug.log` (contains keystrokes; delete both afterwards).
+**Instances**: `instance_name` (Settings → Connection → Name, `configure --name`, `BLADES_INSTANCE_NAME`) labels an installation in the header and tab title.
+**Publication**: This repository starts with clean source history. Private application state, credentials and host-specific deployment files are excluded; host-specific notes live in the ignored `STATE.local.md`. A license for the project's own code is not yet selected; bundled assets have separate license notices.
+**Next steps**: Turn the jsdom keyboard replay into a permanent test with per-device fixtures; test iPhone/iPad and Gboard. Make the message box the primary touch input (send `/` commands without Enter), stop terminal taps raising the keyboard, and fix copying from the terminal on tablets. Add Ollama (plain `ollama run` chat, and agents via `ollama launch` after checking what it writes to agent settings). Exercise first-time native provider sign-in on each new host.

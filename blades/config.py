@@ -27,6 +27,12 @@ def server_settings():
         return {}
 
 
+def instance_name():
+    """Optional label for this installation (e.g. "CLI Dev"), shown in the header and tab title."""
+    value = os.environ.get("BLADES_INSTANCE_NAME") or server_settings().get("instance_name") or ""
+    return value.strip()[:40] if isinstance(value, str) else ""
+
+
 def valid_port(value):
     if isinstance(value, bool) or not isinstance(value, int) or not 1024 <= value <= 65535:
         raise ValueError("Port must be a whole number between 1024 and 65535")
@@ -156,9 +162,17 @@ def save_json(p, data):
             os.unlink(tmp)
 
 
+LEGACY_PROMPTS = (DEFAULT_PROMPT.replace("CLI Commander", "CLI Blades"),)
+
+
 def settings():
     s = dict(DEFAULT_SETTINGS)
-    s.update(load_json(path("defaults.json"), {}))
+    saved = load_json(path("defaults.json"), {})
+    if saved.get("prompt_template") in LEGACY_PROMPTS:
+        # An unmodified pre-rename default: follow the current default instead.
+        saved = {k: v for k, v in saved.items() if k != "prompt_template"}
+        save_json(path("defaults.json"), saved)
+    s.update(saved)
     return s
 
 

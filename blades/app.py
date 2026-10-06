@@ -15,7 +15,7 @@ from flask import Flask, jsonify, request, abort
 from flask_sock import Sock
 from ptyprocess import PtyProcess
 
-from . import audit, config, legacy, projects, prompts, quick, store, tmuxctl, winddown, security, providers, lifecycle, server_config
+from . import audit, config, legacy, locations, projects, prompts, quick, store, tmuxctl, winddown, security, providers, lifecycle, server_config
 
 log = logging.getLogger("blades")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -141,8 +141,10 @@ def _open_blade(slug, shell_only=False, provider="claude", resume_id=None):
             except FileNotFoundError:
                 pass
         try:
+            number = name.rsplit("-", 1)[-1]
+            title = f'{project["name"]} · {time.strftime("%b")} {int(time.strftime("%d"))}' + (f" #{number}" if number != "1" else "")
             tmuxctl.new_session(name, project["path"], text, shell_only=shell_only,
-                                provider=provider, resume_id=resume_id)
+                                provider=provider, resume_id=resume_id, title=title)
         except Exception as e:
             _handoff_receipts.pop(name, None)
             store.set_state(name, "closed", note=f"launch failed: {e}")
@@ -221,7 +223,8 @@ def api_status():
     return {"access": "Local + Tailscale only", "lan_access": False,
             "origin_protection": True, "bind_addresses": config.bind_addresses(),
             "tailscale": bool(config.tailscale_ip()), "providers": providers.available(),
-            "ui_version": _ui_assets()[0],
+            "ui_version": _ui_assets()[0], "instance_name": config.instance_name(),
+            "kbdebug": os.path.exists(config.path("kbdebug.on")),
             "idle_timeout_min": settings["idle_timeout_min"], "idle_grace_sec": settings["idle_grace_sec"]}
 
 
@@ -255,7 +258,54 @@ def api_project_add():
     if not isinstance(body, dict):
         abort(400, "Project must be an object")
     try:
+        if body.get("create"):
+            return jsonify(projects.create_project(body.get("name"), body.get("parent"),
+                                                   git=body.get("git", True) is not False))
         return jsonify(projects.add_project(body.get("path"), body.get("name")))
+    except ValueError as exc:
+        abort(400, str(exc))
+
+
+@app.delete("/api/projects/<slug>")
+def api_project_remove(slug):
+    try:
+        with _open_lock:  # no session can start in this project mid-removal
+            if any(b["slug"] == slug for b in store.live()):
+                abort(409, "Close this project's live sessions before removing it")
+            projects.remove_project(slug)
+    except LookupError:
+        abort(404, "unknown project")
+    except ValueError as exc:
+        abort(400, str(exc))
+    return {"ok": True}
+
+
+@app.get("/api/locations")
+def api_locations():
+    return jsonify(locations.status())
+
+
+@app.put("/api/locations")
+def api_locations_save():
+    body = request.get_json() or {}
+    if not isinstance(body, dict):
+        abort(400, "Code locations must be an object")
+    try:
+        server_config.configure({"project_roots": body.get("paths")})
+    except ValueError as exc:
+        abort(400, str(exc))
+    except RuntimeError as exc:
+        abort(409, str(exc))
+    return jsonify(locations.status())
+
+
+@app.post("/api/locations/preview")
+def api_locations_preview():
+    body = request.get_json() or {}
+    if not isinstance(body, dict):
+        abort(400, "Code locations must be an object")
+    try:
+        return jsonify(locations.preview(body.get("paths")))
     except ValueError as exc:
         abort(400, str(exc))
 
@@ -562,6 +612,25 @@ def api_quick_log(aid):
     return jsonify(quick.last_log(aid, int(request.args.get("lines", 40))))
 
 
+# ---- keyboard diagnostics (only while <BLADES_HOME>/kbdebug.on exists) -------
+
+@app.post("/api/debug/keyboard")
+def api_debug_keyboard():
+    body = request.get_json() or {}
+    if not os.path.exists(config.path("kbdebug.on")):
+        abort(404, "keyboard diagnostics are off")
+    events = body.get("events") if isinstance(body, dict) else None
+    if not isinstance(events, list):
+        abort(400, "events must be a list")
+    target = config.path("keyboard-debug.log")
+    if os.path.exists(target) and os.path.getsize(target) > 2_000_000:
+        abort(413, "keyboard log is full")
+    with open(target, "a", encoding="utf-8") as stream:
+        stream.write(json.dumps({"ua": str(body.get("ua", ""))[:300], "events": events[:500]}) + "\n")
+    os.chmod(target, 0o600)
+    return {"ok": True}
+
+
 # ---- hooks -----------------------------------------------------------------
 
 @app.post("/hook")
@@ -708,7 +777,7 @@ def api_audit_run():
 def api_audit_register():
     body = request.get_json(force=True) or {}
     try:
-        return jsonify(audit.register(body.get("name", ""), body.get("keywords")))
+        return jsonify(audit.register(body.get("name"), body.get("keywords"), path=body.get("path")))
     except RuntimeError as e:
         abort(400, str(e))
 
@@ -731,6 +800,11 @@ def _is_terminal_reply(raw):
     return bool(_TERMINAL_REPLY.fullmatch(raw))
 
 
+def _terminal_size(cols, rows):
+    """Clamp a browser-reported size; wide screens exceed 500 columns."""
+    return max(20, min(1000, int(cols))), max(5, min(500, int(rows)))
+
+
 def _set_winsize(fd, rows, cols):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
@@ -741,8 +815,13 @@ def ws_term(ws, name):
         ws.send("\r\n\x1b[31m[blade] session not running\x1b[0m\r\n")
         return
     env = dict(os.environ, TERM="xterm-256color", LANG=os.environ.get("LANG", "en_US.UTF-8"))
+    # Start at the browser's size (when given) so attaching doesn't resize the window twice.
+    try:
+        cols, rows = _terminal_size(request.args.get("cols", 120), request.args.get("rows", 40))
+    except ValueError:
+        cols, rows = 120, 40
     proc = PtyProcess.spawn(tmuxctl.command(["attach-session", "-t", f"={name}"]),
-                            env=env, dimensions=(40, 120))
+                            env=env, dimensions=(rows, cols))
     alive = True
     lifecycle.attach(name)
 
@@ -774,10 +853,9 @@ def ws_term(ws, name):
                 try:
                     ctl = json.loads(msg[1:])
                     if ctl.get("type") == "resize":
-                        rows, cols = int(ctl["rows"]), int(ctl["cols"])
-                        if 5 <= rows <= 300 and 20 <= cols <= 500:
-                            _set_winsize(proc.fd, rows, cols)
-                            proc.setwinsize(rows, cols)
+                        cols, rows = _terminal_size(ctl["cols"], ctl["rows"])
+                        _set_winsize(proc.fd, rows, cols)
+                        proc.setwinsize(rows, cols)
                 except Exception:
                     pass
                 continue

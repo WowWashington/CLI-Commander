@@ -369,6 +369,22 @@ h1 { font-size: 24px; font-weight: 600; letter-spacing: -.7px; margin: 0; line-h
 .setup-other { font-size: 10px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 9px; }
 .setup-other summary { cursor: pointer; }
 .setup-other p { margin: 7px 0 0; line-height: 1.5; }
+.setup-subhead { display: flex; justify-content: space-between; align-items: center; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); margin-top: 4px; }
+.setup-subhead .setup-inline-button { text-transform: none; letter-spacing: 0; padding: 0; }
+.setup-add-location { display: flex; gap: 8px; }
+.setup-add-location input { flex: 1; min-width: 0; font-family: var(--mono); }
+.setup-folders { display: flex; flex-direction: column; max-height: 230px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.setup-folder { display: flex; align-items: center; gap: 12px; padding: 8px 12px; margin: 0; cursor: pointer; border-bottom: 1px solid var(--line); }
+.setup-folder:last-child { border-bottom: 0; }
+.setup-folder input { width: 17px; height: 17px; min-height: 17px; accent-color: var(--accent); margin: 0; flex: none; }
+.setup-choice-copy .mono, .path-copy .mono { font-family: var(--mono); overflow-wrap: anywhere; }
+.path-list { display: flex; flex-direction: column; gap: 6px; }
+.path-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.path-copy { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.path-copy strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.path-row button { flex: none; }
+#locationAdd input { flex: 1; min-width: 0; font-family: var(--mono); }
+.chip { font-size: 10.5px; padding: 4px 8px; border-radius: 999px; font-family: var(--mono); }
 .setup-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 13px; border-top: 1px solid var(--line); }
 .setup-footer .hint { font-size: 9px; flex: 1; }
 .setup-footer .primary { padding: 8px 12px; white-space: nowrap; }
@@ -478,3 +494,23 @@ h1 { font-size: 24px; font-weight: 600; letter-spacing: -.7px; margin: 0; line-h
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* Open sessions: every live CLI at the top of the sidebar. */
+#openBox { margin-bottom: 4px; }
+.child.open-session { grid-template-columns: 8px auto 1fr auto; margin-left: 4px; }
+.child.open-session .cstate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#strip .tile .label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+/* Installation label, e.g. "CLI Dev" / "CLI Prod". */
+.instance-name { font-size: 10.5px; font-weight: 700; letter-spacing: .3px; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--fg); background: var(--panel2); white-space: nowrap; }
+.instance-name[data-kind="dev"] { color: #f2c46d; border-color: #6b5626; background: #2e2716; }
+.instance-name[data-kind="prod"] { color: var(--accent); border-color: #36544b; background: #1e302a; }
+/* Add project: new folder or existing folder. */
+.project-box input:not([type=checkbox]) { width: 100%; }
+#projectNewFields, #projectExistingFields { display: flex; flex-direction: column; gap: 6px; }
+#projectNewFields[hidden], #projectExistingFields[hidden] { display: none; }
+#projectNewFields > p, #projectExistingFields > p { margin: 0; font-size: 12px; line-height: 1.5; }
+#projectPreview { font-family: var(--mono); font-size: 10px; overflow-wrap: anywhere; }
+.project-box .chk { margin-top: 4px; font-size: 11px; }
+.project-box .chk input { min-height: 0; width: 15px; height: 15px; accent-color: var(--accent); }
+.project-mode { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.project-mode button { flex: 1; border: 0; border-radius: 0; background: transparent; color: var(--dim); padding: 8px; }
+.project-mode button[aria-selected=true] { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }

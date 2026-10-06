@@ -48,19 +48,19 @@ Register an existing project folder directly:
 python -m blades add-project "$HOME/Projects/example" --name Example
 ```
 
-Or use **Settings → Projects → Add project**, enter the folder path, and optionally provide a display name. The private managed registry is `~/.cli_blades/projects.json`; project code stays in its existing folder. A particular Markdown table or `~/projects.md` file is not needed.
+Or use **Settings → Projects → Add project**, enter the folder path, and optionally provide a display name. **Remove** in the same list (or `python -m blades remove-project SLUG`) unregisters a project without touching its folder; close its live sessions first. Projects from a legacy `projects.md` index are hidden rather than removed. The private managed registry is `~/.cli_blades/projects.json`; project code stays in its existing folder. A particular Markdown table or `~/projects.md` file is not needed.
 
-For optional audit discovery, choose a parent folder:
+Code locations are parent folders that hold projects. Setup asks for them in its **Projects** step and suggests common folders that exist (such as `~/Projects`, `~/Code` or `~/Developer`). Manage them later in **Settings → Code locations**, or from the command line (repeat the flag for several folders):
 
 ```sh
-python -m blades configure --projects-root "$HOME/Projects"
+python -m blades configure --projects-root "$HOME/Projects" --projects-root "$HOME/Code"
 ```
 
-The parent folder is used to find projects you may want to register. It does not automatically launch sessions or authorize editing every child folder. A legacy `~/projects.md` index remains an optional compatibility source; do not create or overwrite that file as part of a fresh installation.
+Locations are saved as `project_roots` in private `server.json`; an older single `projects_root` value is still honored. Without a saved choice, `~/Projects` is used when it exists. Their subfolders appear under **Unregistered folders**, ready to register. It does not automatically launch sessions or authorize editing every child folder. A legacy `~/projects.md` index remains an optional compatibility source; do not create or overwrite that file as part of a fresh installation.
 
 ## 3. Select providers and sign in
 
-The first visit opens **Choose your assistants**. Choose the providers the user wants. **Complete sign-in** supplies provider-specific instructions, **Check sign-in again** refreshes discovery, and **Finish setup** saves the choices. Pending authentication does not prevent saving the setup choices.
+The first visit opens **Choose your assistants**. Choose the providers the user wants. **Complete sign-in** supplies provider-specific instructions and **Check sign-in again** refreshes discovery. **Where is your code?** then selects code locations and lets the user tick discovered folders to add as projects, or skip. Pending authentication does not prevent saving the setup choices.
 
 The command-line equivalents are:
 
@@ -135,7 +135,7 @@ The default data directory is `~/.cli_blades/`, separate from the repository. Ba
 | `BLADES_HOME` | Private application data directory. Keep outside the checkout. |
 | `BLADES_PORT` | Process-level port override; takes precedence over saved configuration. |
 | `BLADES_HOST` | Restrict binding to loopback or the current host's verified Tailscale address. Other bindings are rejected. |
-| `BLADES_PROJECTS_ROOT` | Parent directory used for optional audit discovery. |
+| `BLADES_PROJECTS_ROOT` | Single code location; overrides and locks the saved locations. |
 | `BLADES_PROJECTS_MD` | Optional legacy Markdown project index. |
 | `BLADES_CLAUDE_BIN` | Explicit Claude executable path. |
 | `BLADES_CODEX_BIN` | Explicit Codex executable path. |

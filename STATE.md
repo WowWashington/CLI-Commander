@@ -57,7 +57,7 @@ See README.md and docs/SETUP.md for installation, native authentication and setu
 ## Git history (recent)
 
 ```
-(v1.0.0) add XR view, Talk assistant and voice input
+a5d78db add XR view, Talk assistant and voice input
 18dca83 add code locations, project creation and touch-device fixes
 c868dfe Version interface assets and offer safe reload for outdated tabs
 209e7dc Initial public release of CLI Commander

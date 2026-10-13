@@ -34,7 +34,7 @@ def _ui_assets():
     """Version the served UI by content, including updates to an existing install."""
     digest = hashlib.sha256()
     index_html = ""
-    for filename in ("index.html", "app.js", "app.css"):
+    for filename in ("index.html", "app.js", "app.css", "xr.html", "xr.js", "xr.css"):
         with open(os.path.join(STATIC, filename), "rb") as source:
             content = source.read()
         digest.update(filename.encode("ascii") + b"\0" + content + b"\0")
@@ -224,6 +224,7 @@ def api_status():
             "origin_protection": True, "bind_addresses": config.bind_addresses(),
             "tailscale": bool(config.tailscale_ip()), "providers": providers.available(),
             "ui_version": _ui_assets()[0], "instance_name": config.instance_name(),
+            "https_url": security.https_url(),
             "kbdebug": os.path.exists(config.path("kbdebug.on")),
             "idle_timeout_min": settings["idle_timeout_min"], "idle_grace_sec": settings["idle_grace_sec"]}
 
@@ -234,6 +235,14 @@ def api_status():
 def index():
     version, html = _ui_assets()
     return html.replace("__UI_VERSION__", version)
+
+
+@app.get("/xr")
+def xr_page():
+    """XR view for XREAL glasses + Beam Pro (same API, larger targets)."""
+    version = _ui_assets()[0]
+    with open(os.path.join(STATIC, "xr.html"), encoding="utf-8") as source:
+        return source.read().replace("__UI_VERSION__", version)
 
 
 @app.get("/healthz")
@@ -610,6 +619,40 @@ def api_quick_run(aid):
 @app.get("/api/quick/<aid>/log")
 def api_quick_log(aid):
     return jsonify(quick.last_log(aid, int(request.args.get("lines", 40))))
+
+
+# ---- voice/text assistant -------------------------------------------------------
+
+@app.get("/api/agent/status")
+def api_agent_status():
+    from . import agent
+    return jsonify(agent.status())
+
+
+@app.post("/api/agent")
+def api_agent():
+    from . import agent
+    body = request.get_json() or {}
+    if not isinstance(body, dict):
+        abort(400, "Request must be an object")
+    state = agent.status()
+    if not state["available"] or not state["configured"]:
+        abort(409, "The assistant is not set up yet. " + state["setup"])
+    import anthropic
+    try:
+        return jsonify(agent.ask(body.get("text"), body.get("conversation"),
+                                 body.get("session"), body.get("events")))
+    except ValueError as exc:
+        abort(400, str(exc))
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+        abort(409, "The Anthropic API key was rejected. " + state["setup"])
+    except anthropic.RateLimitError:
+        abort(429, "The assistant is rate limited; try again in a minute")
+    except anthropic.APIStatusError as exc:
+        log.warning("assistant API error %s: %s", exc.status_code, exc.message)
+        abort(502, "The assistant service had an error; try again")
+    except anthropic.APIConnectionError:
+        abort(502, "Could not reach the assistant service; check this Mac's internet connection")
 
 
 # ---- keyboard diagnostics (only while <BLADES_HOME>/kbdebug.on exists) -------

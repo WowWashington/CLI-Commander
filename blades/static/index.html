@@ -23,6 +23,7 @@
     <div id="summary"></div>
     <button id="auditBtn" title="Project audit: unregistered folders, loose ends">Audit</button>
     <button id="settingsBtn" title="Settings: broadcast, commands, prompt">⚙ Settings</button>
+    <a id="xrBtn" class="xr-link" href="/xr" title="XR view for XREAL glasses + Beam Pro">XR</a>
   </header>
 
   <div id="backdrop"></div>
@@ -127,6 +128,7 @@
         <p class="hint">Local and Tailscale access only. Changing the port requires a service restart.</p>
         <div class="row"><label for="instanceInput">Name</label><input id="instanceInput" maxlength="40" placeholder="e.g. CLI Dev" autocomplete="off"><button id="instanceSave">Save name</button></div>
         <p class="hint">Shown in the header and browser tab, so you can tell installations apart. Takes effect immediately.</p>
+        <div class="row"><label>XR view</label><a class="xr-link" href="/xr">Open XR view</a><span class="hint">for XREAL glasses + Beam Pro</span></div>
         <div class="row"><label for="setupPort">Port</label><input id="setupPort" type="number" min="1024" max="65535" step="1" value="5090"><button id="setupPortSave">Save port</button></div>
         <p id="setupPortStatus" class="hint" role="status"></p>
         <p class="hint">Save your work and close live sessions before changing ports. Your setup agent can restart the service.</p>

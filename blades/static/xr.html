@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="ui-version" content="__UI_VERSION__">
+<title>CLI Commander XR</title>
+<link rel="stylesheet" href="/static/vendor/xterm.min.css">
+<link rel="stylesheet" href="/static/xr.css?v=__UI_VERSION__">
+</head>
+<body>
+<!-- XR view: sized for XREAL glasses with a Beam Pro (pointer ray + on-screen keyboard).
+     Black is transparent on the glasses, so content floats; targets are large and spaced. -->
+<div id="xr">
+  <header class="xr-top">
+    <button id="xrHome" class="xr-brand" aria-label="Sessions home">CLI <b>Commander</b> <span class="xr-tag">XR</span></button>
+    <span id="xrInstance" class="xr-instance" hidden></span>
+    <span id="xrSummary" class="xr-summary" aria-live="polite"></span>
+    <span class="xr-size"><button id="xrSmaller" class="xr-btn" title="Smaller" aria-label="Smaller">A−</button><button id="xrLarger" class="xr-btn" title="Larger" aria-label="Larger">A+</button></span>
+    <button id="xrTalk" class="xr-btn" data-go="talk" title="Ask the assistant about your sessions">🎙 Talk</button>
+    <a id="xrExit" class="xr-btn xr-ghost" href="/" title="Back to the standard view">Standard view</a>
+  </header>
+
+  <main id="xrMain">
+    <!-- Home: open sessions -->
+    <section id="viewHome" class="xr-view" hidden>
+      <div class="xr-head"><h1>Open sessions</h1>
+        <div class="xr-actions"><button class="xr-btn xr-primary" data-go="new">+ New session</button><button class="xr-btn" data-go="project">+ New project</button></div></div>
+      <div id="homeGrid" class="xr-grid xr-cards"></div>
+      <p id="homeEmpty" class="xr-empty" hidden>No open sessions. Start one with <b>+ New session</b>.</p>
+      <nav class="xr-pager" id="homePager"></nav>
+    </section>
+
+    <!-- New session: pick a project, then an assistant -->
+    <section id="viewNew" class="xr-view" hidden>
+      <div class="xr-head"><h1 id="newTitle">Choose a project</h1>
+        <div class="xr-actions"><button class="xr-btn" data-go="project">+ New project</button><button class="xr-btn xr-ghost" data-go="home">Cancel</button></div></div>
+      <div id="newGrid" class="xr-grid xr-tiles"></div>
+      <nav class="xr-pager" id="newPager"></nav>
+    </section>
+
+    <!-- New project -->
+    <section id="viewProject" class="xr-view" hidden>
+      <div class="xr-head"><h1>New project</h1>
+        <div class="xr-actions"><button class="xr-btn xr-ghost" data-go="home">Cancel</button></div></div>
+      <div class="xr-form">
+        <label for="projName">Name</label>
+        <input id="projName" class="xr-input" placeholder="My project" autocomplete="off" enterkeyhint="done">
+        <label>Location</label>
+        <div id="projLocations" class="xr-choices"></div>
+        <button id="projGit" class="xr-btn xr-toggle" aria-pressed="true">Git repository: On</button>
+        <p id="projPreview" class="xr-hint"></p>
+        <p id="projError" class="xr-error" role="status" hidden></p>
+        <button id="projCreate" class="xr-btn xr-primary xr-wide">Create project →</button>
+      </div>
+    </section>
+
+    <!-- Talk: assistant that reads sessions and proposes actions for confirmation -->
+    <section id="viewTalk" class="xr-view" hidden>
+      <div class="xr-head"><h1>Talk</h1>
+        <div class="xr-actions"><button id="talkSpeak" class="xr-btn xr-toggle" aria-pressed="true">Read replies: On</button><button id="talkNew" class="xr-btn">New chat</button><button id="talkBack" class="xr-btn xr-ghost">Back</button></div></div>
+      <p id="talkSetup" class="xr-error" hidden></p>
+      <div id="talkLog" class="xr-talklog" aria-live="polite"></div>
+      <div id="talkPending" class="xr-pending"></div>
+      <form id="talkForm" class="xr-compose">
+        <button id="talkMic" type="button" class="xr-btn xr-primary">🎤 Ask</button>
+        <textarea id="talkText" class="xr-input" rows="1" placeholder="Or type: what's waiting for me?" enterkeyhint="send"></textarea>
+        <button id="talkSend" type="submit" class="xr-btn">Ask ↵</button>
+      </form>
+    </section>
+
+    <!-- Session: terminal, message box, keys and actions -->
+    <section id="viewSession" class="xr-view xr-session" hidden>
+      <div class="xr-sessionbar">
+        <button class="xr-btn xr-ghost" data-go="home">← Sessions</button>
+        <div class="xr-sessioninfo"><strong id="sessTitle"></strong><span id="sessState"></span></div>
+        <button id="sessGreen" class="xr-btn xr-toggle" aria-pressed="false" title="Plain green text, no background">Green: Off</button>
+        <button id="sessSave" class="xr-btn">Save state</button>
+        <button id="sessWind" class="xr-btn xr-danger">Wind down</button>
+      </div>
+      <div class="xr-sessionbody">
+        <div id="sessTerm" class="xr-term"></div>
+        <aside class="xr-keys" aria-label="Keys">
+          <button data-key="Escape">Esc</button><button data-key="Up">↑</button><button data-key="Tab">Tab</button>
+          <button data-key="Left">←</button><button data-key="Down">↓</button><button data-key="Right">→</button>
+          <button data-key="C-c">Ctrl+C</button><button data-key="BSpace">⌫</button><button data-key="Enter" class="xr-primary">Enter</button>
+        </aside>
+      </div>
+      <div class="xr-quick" aria-label="Quick replies">
+        <button data-quick="1" data-enter="0" title="Press 1 (menu choice)">1</button><button data-quick="2" data-enter="0" title="Press 2">2</button><button data-quick="3" data-enter="0" title="Press 3">3</button>
+        <button data-quick="yes" data-enter="1">Yes ↵</button><button data-quick="continue" data-enter="1">Continue ↵</button>
+        <span class="xr-spacer"></span>
+        <button id="sessReview" class="xr-toggle" aria-pressed="false" title="Review every message before it is sent (use with keyboard dictation)">Always review: Off</button>
+      </div>
+      <form id="sessCompose" class="xr-compose">
+        <button id="sessVoice" type="button" class="xr-btn" title="Speak a message; you review it before anything is sent">🎤 Speak</button>
+        <textarea id="sessText" class="xr-input" rows="1" placeholder="Message this session…" spellcheck="true" enterkeyhint="send"></textarea>
+        <button id="sessType" type="button" class="xr-btn" title="Type the text without pressing Enter (for / menus and prompts)">Type only</button>
+        <button id="sessSend" type="submit" class="xr-btn xr-primary">Send ↵</button>
+      </form>
+    </section>
+  </main>
+
+  <!-- Assistant chooser (after picking or creating a project) -->
+  <div id="pick" class="xr-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+    <div class="xr-panel">
+      <h2 id="pickTitle">Open with</h2>
+      <p id="pickProject" class="xr-hint"></p>
+      <div id="pickChoices" class="xr-choices xr-big"></div>
+      <button class="xr-btn xr-ghost xr-wide" id="pickCancel">Cancel</button>
+    </div>
+  </div>
+  <!-- Review: speech (or any message when "Always review" is on) is never sent unchecked -->
+  <div id="review" class="xr-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+    <div class="xr-panel">
+      <h2 id="reviewTitle">Send this?</h2>
+      <p id="reviewSource" class="xr-hint"></p>
+      <div id="reviewText" class="xr-review-text"></div>
+      <div id="reviewAlts" class="xr-choices"></div>
+      <div class="xr-choices xr-big">
+        <button id="reviewSend" class="xr-btn xr-choice xr-primary">Send ↵</button>
+        <button id="reviewType" class="xr-btn xr-choice">Type only<small>no Enter</small></button>
+        <button id="reviewEdit" class="xr-btn xr-choice">Edit</button>
+        <button id="reviewDiscard" class="xr-btn xr-choice xr-danger">Discard</button>
+      </div>
+    </div>
+  </div>
+  <div id="xrToast" class="xr-toast" role="status" aria-live="polite"></div>
+</div>
+<script src="/static/vendor/xterm.min.js"></script>
+<script src="/static/vendor/addon-fit.min.js"></script>
+<script src="/static/xr.js?v=__UI_VERSION__"></script>
+</body>
+</html>

@@ -15,13 +15,17 @@ input, textarea, select { font: inherit; color: var(--fg); background: var(--bg)
 textarea { width: 100%; min-height: 90px; font-family: var(--mono); font-size: 11.5px; }
 a { color: var(--accent); text-decoration: none; }
 
-#app { display: grid; grid-template-rows: 38px 1fr; grid-template-columns: 250px 1fr; height: 100vh; height: 100dvh; }
+#app { display: grid; grid-template-rows: 38px 1fr; grid-template-columns: 250px minmax(0, 1fr); height: 100vh; height: 100dvh; }
 header { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
 header .brand { font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
 header .brand span { color: var(--accent); }
 #menuBtn { display: none; }
 #stripLabel { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
-#strip { flex: 1; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 4px 0; }
+#strip { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 4px 0; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+/* Keep the brand, badges and buttons at their size; only the strip shrinks (and scrolls). */
+/* The grid column must not grow to the header's full content (every session tab). */
+header > :not(#strip) { flex-shrink: 0; }
+header, main { min-width: 0; }
 #strip::-webkit-scrollbar { display: none; }
 .tile { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 14px; background: var(--panel2); border: 1px solid var(--line); white-space: nowrap; cursor: pointer; font-size: 11.5px; }
 .tile.active { border-color: var(--accent); }
@@ -122,7 +126,7 @@ main { display: flex; flex-direction: column; min-width: 0; min-height: 0; backg
 #toast.show { opacity: 1; }
 
 @media (max-width: 1024px) {
-  #app { grid-template-columns: 1fr; }
+  #app { grid-template-columns: minmax(0, 1fr); }
   #menuBtn { display: inline-block; }
   aside { position: fixed; top: 38px; left: 0; bottom: calc(56px + env(safe-area-inset-bottom, 0px)); width: 100vw; z-index: 40; transform: translateX(-100%); transition: transform .18s; }
   aside.show { transform: none; }
@@ -220,7 +224,7 @@ input, select { min-height: 30px; }
 textarea { resize: vertical; }
 ::selection { background: #39665f; color: #fff; }
 * { scrollbar-width: thin; scrollbar-color: #3c4753 transparent; }
-#app { grid-template-rows: 46px 1fr; grid-template-columns: 250px 1fr; height: var(--viewport-height, 100dvh); }
+#app { grid-template-rows: 46px 1fr; grid-template-columns: 250px minmax(0, 1fr); height: var(--viewport-height, 100dvh); }
 header { gap: 12px; padding: 0 14px; }
 header .brand { background: transparent; border: 0; padding: 0; font-size: 14px; letter-spacing: -.3px; }
 .brand-mark { display: inline-block; margin-left: 10px; color: #4d5c67 !important; font-weight: 400; }
@@ -416,14 +420,14 @@ h1 { font-size: 24px; font-weight: 600; letter-spacing: -.7px; margin: 0; line-h
   .fleet-stat { padding: 11px; }
 }
 @media (max-width: 1024px) {
-  #app { grid-template-columns: 1fr; }
+  #app { grid-template-columns: minmax(0, 1fr); }
   header { padding: 0 10px; gap: 8px; }
   header .brand { font-size: 13px; }
   .brand-mark { display: none; }
   .access-badge { font-size: 9px; }
   #auditBtn, #settingsBtn { display: none; }
   #menuBtn { min-width: 30px; }
-  #strip { justify-content: flex-end; }
+  #strip > .tile:first-child { margin-left: auto; }
   .tile { font-size: 10px; padding: 5px 8px; }
   .tile .label { max-width: 85px; }
   aside { top: 46px; bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
@@ -460,6 +464,9 @@ h1 { font-size: 24px; font-weight: 600; letter-spacing: -.7px; margin: 0; line-h
   .has-update .access-badge { display: none; }
   .update-notice { margin-left: auto; min-height: 36px; }
   .update-notice span { display: none; }
+  /* Narrow screens: access badge shrinks to its status dot so XR stays reachable. */
+  .access-badge { font-size: 0; gap: 0; }
+  .instance-name { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; }
   #home { padding: 16px 12px 24px; }
   .home-heading { gap: 8px; }
   .home-heading .primary { padding: 8px 10px; font-size: 11px; min-height: 38px; }
@@ -514,3 +521,6 @@ h1 { font-size: 24px; font-weight: 600; letter-spacing: -.7px; margin: 0; line-h
 .project-mode { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .project-mode button { flex: 1; border: 0; border-radius: 0; background: transparent; color: var(--dim); padding: 8px; }
 .project-mode button[aria-selected=true] { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--accent); }
+/* Link to the XR view (XREAL glasses), top right. */
+.xr-link { flex: none; font-size: 10.5px; font-weight: 800; letter-spacing: .4px; color: var(--accent); border: 1px solid #36544b; border-radius: 4px; padding: 3px 7px; text-decoration: none; }
+.xr-link:hover { background: #1e302a; }

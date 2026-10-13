@@ -6,6 +6,7 @@
   configure --name LABEL         label this installation (header and tab title)
   add-project PATH      register a project folder (--name NAME optional)
   remove-project SLUG   unregister a project; its folder is left untouched
+  voice-key             store an Anthropic API key (Keychain) for the XR Talk assistant
   setup --status        discover installed assistants and sign-in readiness
   setup --enable IDS    enable chosen assistants (e.g. claude codex gemini)
   setup --reset         reset assistant choices; keep sessions and credentials
@@ -43,12 +44,16 @@ def main(argv):
         parser = argparse.ArgumentParser(description="Configure private CLI Commander host settings; restart afterwards")
         parser.add_argument("--port", type=int)
         parser.add_argument("--name", help='label for this installation, e.g. "CLI Dev"; empty clears it')
+        parser.add_argument("--assistant-keychain-service", metavar="SERVICE",
+                            help="use an existing Keychain item holding an Anthropic API key for the Talk assistant")
         parser.add_argument("--projects-root", action="append", metavar="FOLDER",
                             help="code location whose subfolders are offered as projects; repeat for several")
         opts = parser.parse_args(argv[1:])
         payload = {"port": opts.port} if opts.port is not None else {}
         if opts.name is not None:
             payload["instance_name"] = opts.name
+        if opts.assistant_keychain_service is not None:
+            payload["assistant_keychain_service"] = opts.assistant_keychain_service
         if opts.projects_root:
             payload["project_roots"] = opts.projects_root
         try:
@@ -83,6 +88,16 @@ def main(argv):
             print(json.dumps({"removed": opts.slug}))
         except (ValueError, LookupError) as exc:
             parser.error(str(exc).strip("'"))
+    elif cmd == "voice-key":
+        # Stores the key in the login Keychain; `security` prompts for it, so it
+        # never appears in shell history, process arguments or files.
+        import subprocess
+        from . import agent
+        print("Paste your Anthropic API key when asked (twice). It is stored in your macOS Keychain.")
+        r = subprocess.run(["security", "add-generic-password", "-U", "-s", agent.KEYCHAIN_SERVICE,
+                            "-a", agent.KEYCHAIN_ACCOUNT, "-l", "CLI Commander assistant", "-w"])
+        print("Saved. The XR Talk assistant is ready." if r.returncode == 0 else "Not saved.")
+        sys.exit(r.returncode)
     elif cmd == "setup":
         import argparse
         from . import onboarding

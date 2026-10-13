@@ -169,3 +169,27 @@ Automatic cleanup defaults to 24 hours plus a 120-second warning. It requires co
 7. Record a concise handoff: selected port, state-directory location, enabled providers, service status, checks completed, and anything awaiting the user's sign-in. Keep machine-specific handoffs private.
 
 Before publishing a fork, scan both the current files and reachable history for secrets and personal details. Ignoring a file or removing it from the latest commit does not remove earlier copies. Review bundled dependency notices and choose a license for your own contributions explicitly.
+
+## Optional: XR view and Talk assistant
+
+Open `/xr` (or the **XR** button in the header) for a view sized for XR glasses and phones. Its **Talk** screen answers questions about your sessions and proposes actions; every action needs a tap on **Confirm** before it runs.
+
+Talk needs an Anthropic API key. Store one in the macOS Keychain (you are prompted for it; it never appears in shell history):
+
+```sh
+.venv/bin/python -m blades voice-key
+```
+
+or point CLI Commander at an existing Keychain item that holds an Anthropic API key:
+
+```sh
+python -m blades configure --assistant-keychain-service "<keychain service name>"
+```
+
+Browsers only allow the microphone on HTTPS pages. To use the 🎤 buttons, publish CLI Commander over Tailscale HTTPS (tailnet only, never Funnel) from a Terminal on the host:
+
+```sh
+tailscale serve --bg --https=443 http://127.0.0.1:5090
+```
+
+If `tailscale` is not on your PATH (the Mac App Store or standalone app), use `/Applications/Tailscale.app/Contents/MacOS/Tailscale` in its place. Then open `https://<this Mac's Tailscale name>/xr`. Remove it with `tailscale serve --https=443 off`.

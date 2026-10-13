@@ -24,7 +24,7 @@ def status():
 
 
 def configure(payload):
-    if not isinstance(payload, dict) or not payload or set(payload) - {"port", "projects_root", "project_roots", "instance_name"}:
+    if not isinstance(payload, dict) or not payload or set(payload) - {"port", "projects_root", "project_roots", "instance_name", "assistant_keychain_service"}:
         raise ValueError("Choose a port, code locations or an instance name")
     with _lock:
         saved = config.server_settings()
@@ -60,6 +60,14 @@ def configure(payload):
                 saved["instance_name"] = name.strip()
             else:
                 saved.pop("instance_name", None)
+        if "assistant_keychain_service" in payload:
+            service = payload["assistant_keychain_service"]
+            if not isinstance(service, str) or len(service) > 120 or any(ord(c) < 32 for c in service):
+                raise ValueError("Keychain service name must be text of at most 120 characters")
+            if service.strip():
+                saved["assistant_keychain_service"] = service.strip()
+            else:
+                saved.pop("assistant_keychain_service", None)
         if "project_roots" in payload:
             if os.environ.get("BLADES_PROJECTS_ROOT"):
                 raise RuntimeError("BLADES_PROJECTS_ROOT overrides saved code locations. Ask your setup agent to remove that override first")

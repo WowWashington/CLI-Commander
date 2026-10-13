@@ -43,7 +43,7 @@ class ApiTest(unittest.TestCase):
     def test_ui_version_matches_assets_and_changes_with_each_source(self):
         static = self.home / 'static'
         static.mkdir()
-        for filename in ('index.html', 'app.js', 'app.css'):
+        for filename in ('index.html', 'app.js', 'app.css', 'xr.html', 'xr.js', 'xr.css'):
             (static / filename).write_bytes((Path(self.mod.STATIC) / filename).read_bytes())
         with patch.object(self.mod, 'STATIC', str(static)), \
              patch.object(self.mod.app, '_static_folder', str(static)), \
@@ -69,6 +69,11 @@ class ApiTest(unittest.TestCase):
                         self.assertEqual(asset.data, (static / filename).read_bytes())
                 return version
 
+            xr = self.client.get('/xr')
+            self.assertEqual(xr.status_code, 200)
+            xr_html = xr.get_data(as_text=True)
+            self.assertNotIn('__UI_VERSION__', xr_html)
+            self.assertIn('/static/xr.js?v=', xr_html)
             previous = check_version()
             self.assertEqual(previous, check_version())
             for filename in ('app.js', 'app.css', 'index.html'):

@@ -1,4 +1,5 @@
 """Private-network and browser-boundary regression tests; no live services."""
+import json
 import os
 import tempfile
 import unittest
@@ -99,6 +100,21 @@ class RequestBoundaryTests(unittest.TestCase):
             with self.subTest(origin=origin):
                 self.assertEqual(self.request(host="localhost:5090", headers={"Origin": origin}).status_code, 403)
 
+    def test_tailscale_serve_https_origin_only_via_loopback_proxy(self):
+        # `tailscale serve` connects from loopback over HTTP; the browser is on https://<node>.ts.net.
+        ts = {"Origin": "https://blades.example.ts.net", "X-Blades-Request": "1"}
+        self.assertEqual(self.request("/mutate", "POST", host="blades.example.ts.net", headers=ts, json={}).status_code, 200)
+        self.assertEqual(self.request("/ws/test", host="blades.example.ts.net", headers={"Origin": "https://blades.example.ts.net"}).status_code, 200)
+        for peer, host, origin in (
+                ("100.90.1.2", "blades.example.ts.net", "https://blades.example.ts.net"),   # not via the local proxy
+                ("127.0.0.1", "blades.example.ts.net", "https://evil.example.ts.net"),     # another name
+                ("127.0.0.1", "blades.example.ts.net", "https://blades.example.ts.net:8443"),
+                ("127.0.0.1", "localhost", "https://localhost"),                           # only Tailscale names
+                ("127.0.0.1", "blades.example.ts.net", "http://evil.test")):
+            with self.subTest(peer=peer, origin=origin):
+                self.assertEqual(self.request("/mutate", "POST", peer=peer, host=host,
+                                              headers={"Origin": origin, "X-Blades-Request": "1"}, json={}).status_code, 403)
+
     def test_malformed_origin_is_rejected_instead_of_normalized(self):
         for origin in ("http://localhost/extra", "http://localhost?extra=1",
                        "http://localhost#fragment", "http://localhost:0", "http://[invalid"):
@@ -113,6 +129,17 @@ class RequestBoundaryTests(unittest.TestCase):
                                       json={"name": "x"}).status_code, 200)
         self.assertEqual(self.request("/mutate", "POST", headers={"X-Blades-Request": "1",
                                       "Sec-Fetch-Site": "cross-site"}, json={}).status_code, 403)
+
+    def test_cross_site_allows_only_top_level_page_navigation(self):
+        nav = {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+        self.assertEqual(self.request("/", headers=nav).status_code, 200)
+        for path, method, headers in (
+                ("/", "GET", {**nav, "Sec-Fetch-Dest": "iframe"}),
+                ("/", "GET", {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty"}),
+                ("/mutate", "POST", {**nav, "X-Blades-Request": "1"}),
+                ("/ws/test", "GET", {**nav, "Origin": "http://localhost"})):
+            with self.subTest(path=path, headers=headers):
+                self.assertEqual(self.request(path, method, headers=headers, **({"json": {}} if method == "POST" else {})).status_code, 403)
 
     def test_websocket_requires_same_origin_even_from_tailnet(self):
         self.assertEqual(self.request("/ws/test", peer="100.90.1.2").status_code, 403)
@@ -143,3 +170,25 @@ class RequestBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HttpsUrlTests(unittest.TestCase):
+    def status(self, web):
+        return mock.Mock(stdout=json.dumps({"Web": web}))
+
+    def setUp(self):
+        security._https.update(checked=0.0, url="")
+        self.addCleanup(security._https.update, checked=0.0, url="")
+
+    def test_https_url_only_for_this_port_on_443(self):
+        port = security.config.PORT
+        cases = [
+            ({"node.example.ts.net:443": {"Handlers": {"/": {"Proxy": f"http://127.0.0.1:{port}"}}}}, "https://node.example.ts.net"),
+            ({"node.example.ts.net:443": {"Handlers": {"/": {"Proxy": "http://127.0.0.1:1"}}}}, ""),
+            ({"node.example.ts.net:8443": {"Handlers": {"/": {"Proxy": f"http://127.0.0.1:{port}"}}}}, ""),
+            ({}, ""),
+        ]
+        for web, expected in cases:
+            with self.subTest(expected=expected), mock.patch.object(security.subprocess, "run", return_value=self.status(web)):
+                security._https.update(checked=0.0, url="")
+                self.assertEqual(security.https_url(), expected)

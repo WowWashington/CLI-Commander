@@ -1094,6 +1094,8 @@ async function sendComposer(e) {
 async function loadStatus() {
   try {
     const status = await api('GET', '/api/status'); const badge = $('#accessBadge'); S.kbdebug = !!status.kbdebug; renderInstanceName(status.instance_name);
+    // The XR view needs HTTPS for the microphone; link to the secure address when it exists.
+    document.querySelectorAll('a.xr-link').forEach(a => { a.href = status.https_url && location.protocol !== 'https:' ? status.https_url + '/xr' : '/xr'; });
     if (pageVersion && status.ui_version && status.ui_version !== pageVersion) {
       $('#updateBtn').hidden = false; $('header').classList.add('has-update');
     }
